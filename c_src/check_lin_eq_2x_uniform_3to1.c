@@ -63,7 +63,7 @@ static void assignFunc(vbf_tt F, vbf_tt G,
                        vbf_tt_entry *fgs, vbf_tt_entry *xgs,
                        unsigned char xymc, unsigned char px, unsigned char cfg);
 
-static const unsigned long prim_poly_table[17] = {
+static unsigned long prim_poly_table[] = {
   /* index=0 => unused, index=dim => known primitive polynomial bits */
   0UL,
   3UL,      /* dim=1 => x + 1 => 11b=>3 */

@@ -6,6 +6,9 @@ import galois
 
 class PolynomialParser:
     def parse_univariate_polynomial(self, univariate_polynomial, field_n, irr_poly):
+        # Parses user input for a univariate polynomial (list of [coeff_exp, mon_exp]), the field degree (int), 
+        # and the irreducible polynomial (str). Then creates an APN object in univariate polynomial representation.
+
         if field_n <= 1:
             raise ValueError("Field degree must be greater than 1.")
 

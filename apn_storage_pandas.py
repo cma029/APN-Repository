@@ -24,13 +24,19 @@ def get_parquet_filename(n: int) -> str:
     return f"apn_data_{n}.parquet"
 
 def poly_to_key(poly: List[Tuple[int, int]]) -> str:
+    # Converts a polynomial list [(coeff_exp, mon_exp), ...] into a canonical JSON string for 
+    # duplicate-checking by sorting the terms.
     poly_sorted = sorted(poly, key=lambda t: (t[0], t[1]))
     return json.dumps(poly_sorted)
 
 
+# --------------------------------------------------------------
 # READING AND WRITING FILES
+# --------------------------------------------------------------
 
 def load_apn_df_for_field(n: int) -> pd.DataFrame:
+    # Loads all APNs for field degree n from the Parquet file.
+    # If no file exists, returns an empty DataFrame with the specified columns.
     filename = get_parquet_filename(n)
     if not os.path.isfile(filename):
         # Define columns
@@ -52,6 +58,8 @@ def load_apn_df_for_field(n: int) -> pd.DataFrame:
 
 
 def save_apn_df_for_field(n: int, df: pd.DataFrame) -> None:
+    # Overwrites the Parquet file for field degree n with the given DataFrame.
+    # param df: pandas DataFrame containing APN data
     filename = get_parquet_filename(n)
     try:
         df.to_parquet(filename, index=False, compression='snappy')
@@ -60,7 +68,9 @@ def save_apn_df_for_field(n: int, df: pd.DataFrame) -> None:
         print(f"Error writing to {filename}: {e}")
 
 
+# --------------------------------------------------------------
 # STORING A NEW APN
+# --------------------------------------------------------------
 
 def store_apn_pandas(
     poly: List[Tuple[int, int]],
@@ -68,7 +78,7 @@ def store_apn_pandas(
     irr_poly: str,
     citation: str = "No citation provided."
 ) -> None:
-    
+
     # 1) Initialize PolynomialParser and parse the polynomial into an APN object
     parser = PolynomialParser()
     try:
@@ -77,8 +87,9 @@ def store_apn_pandas(
         print(f"Error parsing polynomial {poly} for field_n={field_n}: {e}")
         return
 
-    compute_apn_properties(apn)
-
+    # Compute APN properties
+    compute_apn_properties(apn)    
+    
     # 2) Convert APN to truth table and compute differential uniformity
     try:
         apn_tt = apn.get_truth_table()
@@ -98,7 +109,7 @@ def store_apn_pandas(
         is_quadratic = apn.properties.get("is_quadratic", False)
     except Exception as e:
         print(f"Error determining if APN {poly} is quadratic: {e}")
-        is_quadratic = False
+        is_quadratic = False  # Default to non-quadratic if error occurs
 
     # 5) Compute Gamma and Delta ranks using multi-threading (and OD spectra if is_quadratic is True).
     g_rank = None
@@ -153,6 +164,7 @@ def store_apn_pandas(
                 print(f"Error computing OD Extended Walsh Spectrum for field_n={field_n}: {e}")
                 odws_dict = {}
 
+    # Prepare the final strings for ODDS/ODWS
     if is_quadratic:
         import json
         odds_str = json.dumps(odds_dict)
@@ -204,9 +216,13 @@ def store_apn_pandas(
     print(f"APN {poly} successfully added to apn_data_{field_n}.parquet.")
 
 
+# --------------------------------------------------------------
 # LOADING + RECONSTRUCTING APN OBJECTS
+# --------------------------------------------------------------
 
 def load_apn_objects_for_field_pandas(n: int) -> List[APN]:
+    # Loads all APN entries for field degree n from the Parquet file, reconstructs APN objects, 
+    # and populates their invariants with ODDS/ODWS data and ranks and more.
     df = load_apn_df_for_field(n)
     if df.empty:
         print(f"No APNs found for field_n={n}.")
@@ -221,8 +237,10 @@ def load_apn_objects_for_field_pandas(n: int) -> List[APN]:
         try:
             poly = json.loads(row["poly"])
 
+            # Reconstruct APN object
             apn = parser.parse_univariate_polynomial(poly, n, row["irr_poly"])
 
+            # Populate invariants with stored data
             if row["odds_str"] == "Non-quadratic" or row["odws_str"] == "Non-quadratic":
                 # Non-quadratic APN; set spectra to "non-quadratic"
                 apn.invariants["odds"] = "non-quadratic"

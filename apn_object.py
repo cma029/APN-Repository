@@ -6,6 +6,9 @@ from representations.abstract_representation import Representation
 
 class APN:
     def __init__(self, univariate_polynomial, field_n, irr_poly):
+        # Initialize the APN object with a univariate polynomial representation of the function,
+        # the field degree (int), and the irreducible polynomial (str).
+
         self.representation = UnivariatePolynomialRepresentation(univariate_polynomial)
         self.field_n = field_n
         self.irr_poly = irr_poly

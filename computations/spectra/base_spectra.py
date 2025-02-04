@@ -13,6 +13,6 @@ class SpectraComputation(ABC):
     def compute_spectrum(self, apn):
         """
         Implement the logic for computing the specific spectrum on the given APN,
-        and return some structure of results.
+        and return a dict or some structure of results.
         """
         pass

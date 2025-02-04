@@ -14,7 +14,7 @@ elif sys.platform.startswith('darwin'):
 else:
     lib_name = "libspectra_computations.so"
 
-lib_path = os.path.join(os.path.dirname(__file__), lib_name)
+lib_path = os.path.join(os.path.dirname(__file__), "c_src", lib_name)
 
 spectra_lib = ctypes.CDLL(lib_path)
 
@@ -31,6 +31,9 @@ spectra_lib.compute_differential_spectrum.restype = None
 spectra_lib.compute_extended_walsh_spectrum.argtypes = [POINTER(VbfTt), POINTER(c_size_t)]
 spectra_lib.compute_extended_walsh_spectrum.restype = None
 
+# --------------------------------------------------------------
+# Internal helper to create the C structure from a Python list
+# --------------------------------------------------------------
 def create_vbf_tt_from_list(tt_values, dimension):
     num_entries = 1 << dimension
     if len(tt_values) != num_entries:

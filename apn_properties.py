@@ -70,7 +70,7 @@ def compute_apn_properties(apn):
         # 9) If k_to_1 == "3-to-1", we check if it is a canonical triplicate (uniform)
         # using is_canonical_triplicate_python. Otherwise, set False.
         if apn.properties["k_to_1"] == "3-to-1":
-            from check_lin_eq_2x_uniform_3to1 import is_canonical_triplicate_python
+            from computations.equivalence.lin_eq_2x_uniform_3to1 import is_canonical_triplicate_python
             tt_list = apn._get_truth_table_list()
             is_can = is_canonical_triplicate_python(tt_list, apn.field_n)
             apn.properties["uniformly_distributed"] = bool(is_can)

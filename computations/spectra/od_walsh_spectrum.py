@@ -2,7 +2,7 @@
 # Description: Implementation of the Ortho-Derivative Walsh Spectrum (ODWS)
 
 from computations.spectra.base_spectra import SpectraComputation
-from Modular.c_spectra_bindings import vbf_tt_extended_walsh_spectrum_python
+from c_spectra_bindings import vbf_tt_extended_walsh_spectrum_python
 
 class ODWalshSpectrumComputation(SpectraComputation):
     """

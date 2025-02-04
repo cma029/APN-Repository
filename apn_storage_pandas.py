@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple
 import concurrent.futures
 import multiprocessing
 
-from Modular.c_spectra_bindings import (
+from c_spectra_bindings import (
     vbf_tt_differential_spectrum_python,
     vbf_tt_extended_walsh_spectrum_python
 )

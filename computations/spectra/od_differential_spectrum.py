@@ -2,7 +2,7 @@
 # Description: Implementation of the Ortho-Derivative Differential Spectrum (ODDS)
 
 from computations.spectra.base_spectra import SpectraComputation
-from Modular.c_spectra_bindings import vbf_tt_differential_spectrum_python
+from c_spectra_bindings import vbf_tt_differential_spectrum_python
 
 class ODDifferentialSpectrumComputation(SpectraComputation):
     """

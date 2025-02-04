@@ -4,16 +4,6 @@
 from computations.spectra.base_spectra import SpectraComputation
 from c_spectra_bindings import vbf_tt_differential_spectrum_python
 
-"""
-The ODDS (Ortho-Derivative Differential Spectrum) and ODWS (Ortho-Derivative Walsh Spectrum)
-computations are based on the work of Nikolay Stoyanov Kaleyski, whose code is available at:
-
-https://git.app.uib.no/Nikolay.Kaleyski/vectorial-boolean-functions
-
-These implementations follow or adapt the logic from that repository,
-which we gratefully acknowledge.
-"""
-
 class ODDifferentialSpectrumComputation(SpectraComputation):
     """
     Ortho-Derivative Differential Spectrum computation class.

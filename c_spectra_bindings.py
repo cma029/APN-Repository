@@ -7,6 +7,16 @@ import os
 import sys
 from ctypes import c_size_t, POINTER, c_ulong
 
+"""
+The ODDS (Ortho-Derivative Differential Spectrum) and ODWS (Ortho-Derivative Walsh Spectrum)
+computations are based on the work of Nikolay Stoyanov Kaleyski, whose code is available at:
+
+https://git.app.uib.no/Nikolay.Kaleyski/vectorial-boolean-functions
+
+These implementations follow or adapt the logic from that repository,
+which we gratefully acknowledge.
+"""
+
 if sys.platform.startswith('win'):
     lib_name = "spectra_computations.dll"
 elif sys.platform.startswith('darwin'):

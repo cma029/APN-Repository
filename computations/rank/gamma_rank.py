@@ -4,6 +4,17 @@
 from sage.all import Matrix, GF, log
 from computations.rank.base_rank import RankComputation
 
+"""
+Gamma Rank implementations are adapted from the code provided in:
+
+L. Perrin, P. Q. Nguyen, E. B. Kavun, A. Biryukov, "sboxU: Tools for analyzing S-boxes,"
+available at https://github.com/lpp-crypto/sboxU
+
+All code logic herein is implemented in accordance with the algorithms/design
+shared in sboxU. We do not claim authorship of the original mathematics.
+We thank the original authors for making their code available.
+"""
+
 def oplus(x, y):
     # Bitwise XOR function.
     return x ^ y

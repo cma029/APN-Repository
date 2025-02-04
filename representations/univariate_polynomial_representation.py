@@ -5,6 +5,8 @@ from representations.abstract_representation import Representation
 
 class UnivariatePolynomialRepresentation(Representation):
     # APN function represented as a univariate polynomial over GF(2^n).
+    # The univariate polynomial is stored as a list of tuples: (coefficient_exponent, monomial_exponent).
+
     def __init__(self, univariate_polynomial):
         self.univariate_polynomial = univariate_polynomial
 
@@ -23,6 +25,8 @@ class UnivariatePolynomialRepresentation(Representation):
 
         a = field.primitive_element
 
+        # Convert exponents of a primitive element to field elements for the coefficients
+        # After this conversion, each polynomial term is stored as (field_element, monomial_exponen)
         terms = []
         for (coeff_exp, mon_exp) in self.univariate_polynomial:
             coeff = a ** coeff_exp

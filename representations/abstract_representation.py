@@ -12,4 +12,6 @@ class Representation(ABC):
 
     @abstractmethod
     def to_truth_table(self, field_n, irr_poly):
+        # Convert the current univariate polynomial representation into a truth table representation.
+        # Returns a new Representation instance that represents the function as a truth table.
         pass

@@ -6,6 +6,17 @@ from computations.equivalence.base_equivalence import EquivalenceTest
 from sage.all import GF, Matrix
 from sage.coding.linear_code import LinearCode
 
+"""
+CCZ Equivalence implementations are adapted from the code provided in:
+
+L. Perrin, P. Q. Nguyen, E. B. Kavun, A. Biryukov, "sboxU: Tools for analyzing S-boxes,"
+available at https://github.com/lpp-crypto/sboxU
+
+All code logic herein is implemented in accordance with the algorithms/design
+shared in sboxU. We do not claim authorship of the original mathematics.
+We thank the original authors for making their code available.
+"""
+
 def tobin(x, length=0):
     bin_str = bin(x)[2:]  # Remove '0b' prefix
     bin_str = bin_str.zfill(length)

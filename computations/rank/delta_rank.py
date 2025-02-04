@@ -5,6 +5,17 @@ from sage.all import Matrix, GF, log
 from computations.rank.base_rank import RankComputation
 from computations.rank.gamma_rank import oplus
 
+"""
+Delta Rank implementations are adapted from the code provided in:
+
+L. Perrin, P. Q. Nguyen, E. B. Kavun, A. Biryukov, "sboxU: Tools for analyzing S-boxes,"
+available at https://github.com/lpp-crypto/sboxU
+
+All code logic herein is implemented in accordance with the algorithms/design
+shared in sboxU. We do not claim authorship of the original mathematics.
+We thank the original authors for making their code available.
+"""
+
 def ddt(f):
     # Compute the Difference Distribution Table (DDT) for the function f,
     # where f is a list of length 2^n representing a LUT (0-based).

@@ -18,6 +18,8 @@ We thank the original authors for making their code available.
 """
 
 def tobin(x, length=0):
+    # Convert the integer x to a binary list of length 'length'.
+    # The most significant bit is at index 0 of the returned list.
     bin_str = bin(x)[2:]  # Remove '0b' prefix
     bin_str = bin_str.zfill(length)
     return [int(bit) for bit in bin_str]
@@ -61,7 +63,6 @@ def are_ccz_equivalent_lists(f, g):
         equivalent = code_f.is_permutation_equivalent(code_g)
 
     finally:
-        # Freed references if needed
         pass
 
     return equivalent

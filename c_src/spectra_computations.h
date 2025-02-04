@@ -22,7 +22,10 @@ typedef struct vbf_truth_table {
     vbf_tt_entry* vbf_tt_values;
 } vbf_tt;
 
+/* Compute_extended_walsh_spectrum: Ortho-Derivative Walsh Spectrum (ODWS) */
 EXPORT void compute_extended_walsh_spectrum(const vbf_tt* f, size_t* spectrum_counts);
+
+/* Compute_differential_spectrum: Ortho-Derivative Differential Spectrum (ODDS) */
 EXPORT void compute_differential_spectrum(const vbf_tt* f, size_t* spectrum_counts);
 
 #ifdef __cplusplus

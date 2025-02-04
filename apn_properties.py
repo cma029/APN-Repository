@@ -8,6 +8,7 @@ from collections import Counter
 
 def compute_apn_properties(apn):
     # Computes and appends polynomial-related properties to an APN object.
+    # The properties are: algebraic_degree, number_of_terms, is_monomial, is_apn, is_quadratic, k_to_1.
     if hasattr(apn.representation, "univariate_polynomial"):
         univ_poly = apn.representation.univariate_polynomial
 
@@ -82,6 +83,8 @@ def compute_apn_properties(apn):
 
 
 def _build_galois_polynomial(univ_poly, field):
+    # Helper function to construct a galois.Poly from a univariate polynomial
+    # Create a list of coefficients in ascending order: coeffs[i] = (coefficient of x^i).
     from galois import Poly
 
     if not univ_poly:

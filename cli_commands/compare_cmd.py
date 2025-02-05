@@ -50,6 +50,8 @@ def compare_apns_cli(compare_type, field_n, debug):
         in_odws = in_apn.invariants.get("odws", "non-quadratic")
         in_gamma = in_apn.invariants.get("gamma_rank", None)
         in_delta = in_apn.invariants.get("delta_rank", None)
+
+        # And one property needed for ODDS/ODWS comparison.
         in_is_quad = in_apn.properties.get("is_quadratic", False)
 
         # Restrict relevant types if non-quadratic.

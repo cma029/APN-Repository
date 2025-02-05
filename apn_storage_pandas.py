@@ -260,5 +260,5 @@ def load_apn_objects_for_field_pandas(n: int) -> List[APN]:
             print(f"Error reconstructing APN at index {index}: {e}")
             continue
 
-    print(f"Loaded {len(apn_list)} APN objects for field_n={n}.")
+    # print(f"Loaded {len(apn_list)} APN objects for field_n={n}.")
     return apn_list

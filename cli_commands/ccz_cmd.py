@@ -20,6 +20,20 @@ def ccz_equivalence_cli(input_apn_index):
     apn_list = load_input_apns()
     match_list_data = load_match_list()
 
+    if input_apn_index < 0 or input_apn_index >= len(apn_list):
+        click.echo("Invalid input APN index.")
+        return
+
+    if input_apn_index not in match_list_data or not match_list_data[input_apn_index]:
+        click.echo("No matches in match-list. Run 'compare' first.")
+        return
+
+    in_apn = apn_list[input_apn_index]
+    matches = match_list_data[input_apn_index]
+    if not matches:
+        click.echo("No matches to check for CCZ-equivalence.")
+        return
+
     in_tt = in_apn.get_truth_table().representation.truth_table
 
     removed_count = 0

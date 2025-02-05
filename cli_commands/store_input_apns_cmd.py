@@ -1,5 +1,3 @@
-# store_input_apns_cmd.py
-
 import click
 from apn_storage_pandas import store_apn_pandas, load_input_apns
 from apn_object import APN

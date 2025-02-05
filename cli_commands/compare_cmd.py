@@ -1,4 +1,3 @@
-# compare_cmd.py
 import click
 from apn_storage_pandas import (
     load_input_apns,

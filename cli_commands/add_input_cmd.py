@@ -1,5 +1,3 @@
-# add_input_cmd.py
-
 import click
 import ast
 from pathlib import Path

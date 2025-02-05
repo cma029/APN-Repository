@@ -1,5 +1,3 @@
-# reset_storage_cmd.py
-
 import os
 import click
 

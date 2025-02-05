@@ -1,5 +1,4 @@
 # compare_cmd.py
-
 import click
 from apn_storage_pandas import (
     load_input_apns,
@@ -12,7 +11,8 @@ from user_input_parser import PolynomialParser
 @click.command("compare")
 @click.option("--compare-type", type=click.Choice(["odds", "odws", "delta", "gamma", "all"]), default="all")
 @click.option("--field-n", required=True, type=int)
-def compare_apns_cli(compare_type, field_n):
+@click.option("--debug", is_flag=True)
+def compare_apns_cli(compare_type, field_n, debug):
     # Compares invariants of APNs in input_apns.json with the invariants of stored DB APNs for GF(2^n).
     # Invariant matches are stored in match_list.json.
     apn_list = load_input_apns()
@@ -25,6 +25,12 @@ def compare_apns_cli(compare_type, field_n):
     if not db_apns:
         click.echo(f"No APNs found in the database for GF(2^{field_n}).")
         return
+
+    if debug:
+        click.echo(f"\nDebug Mode: Listing {len(db_apns)} DB APNs for GF(2^{field_n}):")
+        for idx, db_apn in enumerate(db_apns):
+            click.echo(f"\nDB_APN {idx}:\n{db_apn}")
+        click.echo("\nEnd of DB APNs.\n")
 
     for input_idx, in_apn in enumerate(apn_list):
         if input_idx not in match_list_data:
@@ -44,8 +50,6 @@ def compare_apns_cli(compare_type, field_n):
         in_odws = in_apn.invariants.get("odws", "non-quadratic")
         in_gamma = in_apn.invariants.get("gamma_rank", None)
         in_delta = in_apn.invariants.get("delta_rank", None)
-
-        # And one property needed for ODDS/ODWS comparison.
         in_is_quad = in_apn.properties.get("is_quadratic", False)
 
         # Restrict relevant types if non-quadratic.

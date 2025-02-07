@@ -18,6 +18,8 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
     # Adds user-specified univariate polynomial or .tt files to input_apns.json. 
     apn_list = load_input_apns()
     parser = PolynomialParser()
+
+    # Separate list to store newly added APNs.
     added_apns = []
 
     if field_n is None:
@@ -107,7 +109,10 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             click.echo(f"Error reading .tt file {fpath}: {e}", err=True)
             return
 
+    # Add newly added APNs to main list.
     apn_list.extend(added_apns)
+
+    # Save the updated list to input_apns.json.
     save_input_apns(apn_list)
 
     # Formated printout of the newly added APNs.
@@ -120,6 +125,7 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             click.echo("-" * 60)
 
 def _format_apn_detailed(apn: APN, index: int) -> str:
+    # Format the APNs using the cli_utils.py functions.
     poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
     props_str = str(apn.properties)
     invs_str = str(reorder_invariants(apn.invariants))

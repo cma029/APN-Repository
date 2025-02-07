@@ -1,10 +1,10 @@
 # compute_match_properties_cmd.py
 
 import click
-from apn_storage_pandas import (
+from storage.json_storage_utils import (
+    load_input_apns, save_input_apns,
     load_match_list, save_match_list
 )
-from storage.input_json_storage import load_input_apns, save_input_apns
 from apn_properties import compute_apn_properties
 from apn_object import APN
 

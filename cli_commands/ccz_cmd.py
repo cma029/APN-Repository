@@ -1,7 +1,9 @@
 import click
 import concurrent.futures
-from apn_storage_pandas import load_match_list, save_match_list
-from storage.input_json_storage import load_input_apns, save_input_apns
+from storage.json_storage_utils import (
+    load_input_apns, save_input_apns,
+    load_match_list, save_match_list
+)
 from computations.equivalence.ccz_equivalence import CCZEquivalenceTest
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation

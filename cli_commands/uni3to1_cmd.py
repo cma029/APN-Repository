@@ -1,11 +1,11 @@
 # uni3to1_cmd.py
 
 import click
-from apn_storage_pandas import (
+from storage.json_storage_utils import (
+    load_input_apns, save_input_apns,
     load_match_list, save_match_list,
     EQUIV_LIST_FILE, load_equivalence_list, save_equivalence_list
 )
-from storage.input_json_storage import load_input_apns, save_input_apns
 from apn_object import APN
 from computations.equivalence.lin_eq_2x_uniform_3to1 import Uniform3to1EquivalenceTest
 from representations.truth_table_representation import TruthTableRepresentation

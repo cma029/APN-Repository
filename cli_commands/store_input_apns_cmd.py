@@ -1,6 +1,6 @@
 import click
 from apn_storage_pandas import store_apn_pandas
-from storage.input_json_storage import load_input_apns
+from storage.json_storage_utils import load_input_apns
 from apn_object import APN
 
 @click.command("store-input-apns")

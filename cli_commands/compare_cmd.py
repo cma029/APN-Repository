@@ -4,6 +4,7 @@ from storage.json_storage_utils import (
     save_match_list
 )
 from user_input_parser import PolynomialParser
+from apn_storage_pandas import load_apn_objects_for_field_pandas
 
 @click.command("compare")
 @click.option("--compare-type", type=click.Choice(["odds", "odws", "delta", "gamma", "all"]), default="all")

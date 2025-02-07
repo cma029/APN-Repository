@@ -2,7 +2,8 @@
 # Description: This file contains a command to read APNs for a specific field_n.
 
 import click
-from apn_storage_pandas import load_apn_objects_for_field_pandas, polynomial_to_str, reorder_invariants
+from apn_storage_pandas import load_apn_objects_for_field_pandas
+from cli_commands.cli_utils import polynomial_to_str, reorder_invariants
 from typing import Optional
 from apn_object import APN
 

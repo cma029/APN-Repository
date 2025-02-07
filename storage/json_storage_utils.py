@@ -62,6 +62,8 @@ def save_input_apns(apn_list: List[APN]) -> None:
     click.echo(f"Saved {len(apn_list)} input APNs to {INPUT_APNS_FILE}.")
 
 def load_match_list() -> Dict[int, List]:
+    # Reads the match_list.json file and returns a dict mapping:
+    # input_apn_index -> list of (APN, set_of_compare_types).
     ensure_storage_folder()
     if not os.path.isfile(MATCH_LIST_FILE):
         return {}
@@ -94,6 +96,7 @@ def load_match_list() -> Dict[int, List]:
     return match_list_data
 
 def save_match_list(match_list_data: Dict[int, List]) -> None:
+    # Writes the match_list dict to match_list.json.
     ensure_storage_folder()
     serializable_list = {}
     for apn_idx, matches in match_list_data.items():
@@ -113,3 +116,18 @@ def save_match_list(match_list_data: Dict[int, List]) -> None:
     with open(MATCH_LIST_FILE, "w", encoding="utf-8") as f:
         json.dump(serializable_list, f, indent=2)
     click.echo(f"Saved match lists to {MATCH_LIST_FILE}.")
+
+def load_equivalence_list() -> List[dict]:
+    # Reads the list of equivalences from equivalence_list.json.
+    ensure_storage_folder()
+    if not os.path.isfile(EQUIV_LIST_FILE):
+        return []
+    with open(EQUIV_LIST_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_equivalence_list(eq_list: List[dict]) -> None:
+    # Writes the list of equivalences to equivalence_list.json.
+    ensure_storage_folder()
+    with open(EQUIV_LIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(eq_list, f, indent=2)
+    click.echo(f"Equivalence list saved to {EQUIV_LIST_FILE}")

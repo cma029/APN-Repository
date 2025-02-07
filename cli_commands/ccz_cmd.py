@@ -2,7 +2,8 @@ import click
 import concurrent.futures
 from storage.json_storage_utils import (
     load_input_apns, save_input_apns,
-    load_match_list, save_match_list
+    load_match_list, save_match_list,
+    load_equivalence_list, save_equivalence_list
 )
 from computations.equivalence.ccz_equivalence import CCZEquivalenceTest
 from apn_object import APN
@@ -11,10 +12,6 @@ from typing import Optional
 from user_input_parser import PolynomialParser
 import os
 import json
-
-from apn_storage_pandas import (
-    EQUIV_LIST_FILE, load_equivalence_list, save_equivalence_list
-)
 
 @click.command("ccz")
 @click.option("--input-apn-index", default=0, type=int)

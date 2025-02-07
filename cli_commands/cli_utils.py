@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 def polynomial_to_str(univ_poly):
     # Convert a list of ([coefficient_exp, monomial_exp]) into a univariate polynomial string.
+    # Example: [(1,9),(11,6),(0,3)] -> "a^1*x^9 + a^11*x^6 + x^3"
     if not univ_poly:
         return "Not available. See cli_utils.py"
     parts = []

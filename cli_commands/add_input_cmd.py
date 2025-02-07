@@ -7,6 +7,7 @@ from storage.json_storage_utils import load_input_apns, save_input_apns
 from apn_properties import compute_apn_properties
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
+from cli_commands.cli_utils import polynomial_to_str, reorder_invariants
 
 @click.command("add-input")
 @click.option("--poly", "-p", multiple=True)
@@ -17,6 +18,7 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
     # Adds user-specified univariate polynomial or .tt files to input_apns.json. 
     apn_list = load_input_apns()
     parser = PolynomialParser()
+    added_apns = []
 
     if field_n is None:
         click.echo("Error: --field-n is required.", err=True)
@@ -74,8 +76,7 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
             compute_apn_properties(apn)
             compute_invariants_for_apn(apn)
-            click.echo(f"Added polynomial-based APN:\n{apn}")
-            apn_list.append(apn)
+            added_apns.append(apn)
         except Exception as e:
             click.echo(f"Error parsing user polynomial {poly_str}: {e}", err=True)
             return
@@ -101,10 +102,30 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             apn_tt = APN.from_representation(tt_repr, n_val, irr_poly)
             compute_apn_properties(apn_tt)
             compute_invariants_for_apn(apn_tt)
-            click.echo(f"Added TT-based APN from {fpath}:\n{apn_tt}")
-            apn_list.append(apn_tt)
+            added_apns.append(apn_tt)
         except Exception as e:
             click.echo(f"Error reading .tt file {fpath}: {e}", err=True)
             return
 
+    apn_list.extend(added_apns)
     save_input_apns(apn_list)
+
+    # Formated printout of the newly added APNs.
+    if added_apns:
+        click.echo("")
+        click.echo("Newly Added APNs:")
+        click.echo("-" * 60)
+        for i, apn in enumerate(added_apns, start=1):
+            click.echo(_format_apn_detailed(apn, i))
+            click.echo("-" * 60)
+
+def _format_apn_detailed(apn: APN, index: int) -> str:
+    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+    props_str = str(apn.properties)
+    invs_str = str(reorder_invariants(apn.invariants))
+
+    lines = []
+    lines.append(f"APN {index}: Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
+    lines.append(f"  Properties: {props_str}")
+    lines.append(f"  Invariants: {invs_str}")
+    return "\n".join(lines)

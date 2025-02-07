@@ -10,10 +10,12 @@ from cli_commands.read_field_cmd import read_db_apns
 from cli_commands.reset_storage_cmd import reset_storage_cli
 from cli_commands.save_matches_cmd import save_matches_cli
 from cli_commands.store_input_apns_cmd import store_input_apns_cli
+from cli_commands.uni3to1_cmd import uni3to1_equivalence_cli
 
 
 @click.group()
 def cli():
+    # CLI interface for handling APNs.
     pass
 
 # Register commands
@@ -26,6 +28,7 @@ cli.add_command(read_db_apns)
 cli.add_command(reset_storage_cli)
 cli.add_command(save_matches_cli)
 cli.add_command(store_input_apns_cli)
+cli.add_command(uni3to1_equivalence_cli)
 
 if __name__ == "__main__":
     cli()

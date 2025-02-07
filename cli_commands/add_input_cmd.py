@@ -3,7 +3,7 @@ import ast
 from pathlib import Path
 from typing import List
 from user_input_parser import PolynomialParser
-from apn_storage_pandas import load_input_apns, save_input_apns
+from storage.input_json_storage import load_input_apns, save_input_apns
 from apn_properties import compute_apn_properties
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation

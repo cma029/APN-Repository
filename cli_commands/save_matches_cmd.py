@@ -1,7 +1,8 @@
 # save_matches_cmd.py
 import click
 import json
-from apn_storage_pandas import load_input_apns, load_match_list, polynomial_to_str
+from apn_storage_pandas import load_match_list, polynomial_to_str
+from storage.input_json_storage import load_input_apns
 
 @click.command("save-matches")
 @click.option("--output-file", default="matches_output.json", type=str)

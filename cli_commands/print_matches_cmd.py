@@ -1,7 +1,8 @@
 # print_matches_cmd.py
 
 import click
-from apn_storage_pandas import load_input_apns, load_match_list
+from apn_storage_pandas import load_match_list
+from storage.input_json_storage import load_input_apns
 from user_input_parser import PolynomialParser
 
 @click.command("print-matches")

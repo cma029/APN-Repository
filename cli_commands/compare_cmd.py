@@ -1,10 +1,10 @@
 import click
 from apn_storage_pandas import (
-    load_input_apns,
     load_match_list,
     save_match_list,
     load_apn_objects_for_field_pandas
 )
+from storage.input_json_storage import load_input_apns
 from user_input_parser import PolynomialParser
 
 @click.command("compare")

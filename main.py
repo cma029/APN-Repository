@@ -6,7 +6,7 @@ from cli_commands.ccz_cmd import ccz_equivalence_cli
 from cli_commands.compare_cmd import compare_apns_cli
 from cli_commands.compute_match_properties_cmd import compute_match_properties_cli
 from cli_commands.print_matches_cmd import print_matches_cli
-from cli_commands.read_field_cmd import read_db_apns
+from cli_commands.read_db_cmd import read_db_apns
 from cli_commands.reset_storage_cmd import reset_storage_cli
 from cli_commands.save_matches_cmd import save_matches_cli
 from cli_commands.store_input_apns_cmd import store_input_apns_cli

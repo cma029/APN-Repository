@@ -17,6 +17,9 @@ def ensure_storage_folder():
     if not os.path.isdir(STORAGE_DIR):
         os.makedirs(STORAGE_DIR, exist_ok=True)
 
+# --------------------------------------------------------------
+# input_apns.json
+# --------------------------------------------------------------
 def load_input_apns() -> List[APN]:
     # Reads APNs from input_apns.json and returns them as a list of APN objects.
     ensure_storage_folder()
@@ -61,6 +64,9 @@ def save_input_apns(apn_list: List[APN]) -> None:
         json.dump(data, f, indent=2)
     click.echo(f"Saved {len(apn_list)} input APNs to {INPUT_APNS_FILE}.")
 
+# --------------------------------------------------------------
+# match_list.json
+# --------------------------------------------------------------
 def load_match_list() -> Dict[int, List]:
     # Reads the match_list.json file and returns a dict mapping:
     # input_apn_index -> list of (APN, set_of_compare_types).
@@ -117,6 +123,9 @@ def save_match_list(match_list_data: Dict[int, List]) -> None:
         json.dump(serializable_list, f, indent=2)
     click.echo(f"Saved match lists to {MATCH_LIST_FILE}.")
 
+# --------------------------------------------------------------
+# equivalence_list.json
+# --------------------------------------------------------------
 def load_equivalence_list() -> List[dict]:
     # Reads the list of equivalences from equivalence_list.json.
     ensure_storage_folder()

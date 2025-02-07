@@ -1,4 +1,4 @@
-# read_field_cmd.py
+# read_db_cmd.py
 # Description: This file contains a command to read APNs for a specific field_n.
 
 import click

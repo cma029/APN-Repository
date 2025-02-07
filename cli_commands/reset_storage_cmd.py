@@ -1,7 +1,7 @@
 import os
 import click
 
-from apn_storage_pandas import (
+from storage.json_storage_utils import (
     STORAGE_DIR, INPUT_APNS_FILE, MATCH_LIST_FILE, EQUIV_LIST_FILE
 )
 

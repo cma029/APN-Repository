@@ -1,6 +1,3 @@
-# read_db_cmd.py
-# Description: This file contains a command to read APNs for a specific field_n.
-
 import click
 from apn_storage_pandas import load_apn_objects_for_field_pandas
 from cli_commands.cli_utils import format_generic_apn

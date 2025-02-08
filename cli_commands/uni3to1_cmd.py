@@ -18,6 +18,18 @@ def uni3to1_equivalence_cli(input_apn_index):
     apn_list = load_input_apns()
     match_list_data = load_match_list()
 
+    if input_apn_index < 0 or input_apn_index >= len(apn_list):
+        click.echo("Invalid input APN index.")
+        return
+    if input_apn_index not in match_list_data or not match_list_data[input_apn_index]:
+        click.echo("No matches in the match list. Run 'compare' first.")
+        return
+
+    in_apn = apn_list[input_apn_index]
+    if in_apn.properties.get("k_to_1") != "3-to-1":
+        click.echo("Input APN does not have k_to_1 == '3-to-1'.")
+        return
+
     matches = match_list_data[input_apn_index]
     removed_count = 0
     found_equiv_apn = None

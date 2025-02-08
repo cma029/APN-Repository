@@ -5,7 +5,6 @@ from storage.json_storage_utils import (
     load_match_list, save_match_list
 )
 from apn_properties import compute_apn_properties
-from cli_commands.invariants_utils import compute_apn_invariants
 from cli_commands.cli_utils import format_generic_apn
 from apn_object import APN
 
@@ -24,15 +23,11 @@ def compute_match_properties_cli(input_apn_index):
         click.echo("No matches available. Please run 'compare' first.")
         return
 
-    def compute_both(apn: APN):
-        compute_apn_properties(apn)
-        compute_apn_invariants(apn)
-
     if input_apn_index is None:
         # Process all input APNs.
         for idx, matches in match_list_data.items():
             input_apn = apn_list[idx]
-            compute_both(input_apn)
+            compute_apn_properties(input_apn)
 
             # Print the input APN.
             click.echo(format_generic_apn(input_apn, f"INPUT_APN {idx}"))
@@ -41,7 +36,7 @@ def compute_match_properties_cli(input_apn_index):
             if matches:
                 # Print each matched APN for this input APN.
                 for m_idx, (m_apn, _) in enumerate(matches, start=1):
-                    compute_both(m_apn)
+                    compute_apn_properties(m_apn)
                     click.echo(format_generic_apn(m_apn, f"Matched APN #{idx}.{m_idx}"))
                     click.echo("-" * 100)
             else:
@@ -64,13 +59,13 @@ def compute_match_properties_cli(input_apn_index):
         input_apn = apn_list[input_apn_index]
         matches = match_list_data[input_apn_index]
 
-        compute_both(input_apn)
+        compute_apn_properties(input_apn)
         click.echo(format_generic_apn(input_apn, f"INPUT_APN {input_apn_index}"))
         click.echo("-" * 100)
 
         if matches:
             for m_idx, (m_apn, _) in enumerate(matches, start=1):
-                compute_both(m_apn)
+                compute_apn_properties(m_apn)
                 click.echo(format_generic_apn(m_apn, f"Matched APN #{input_apn_index}.{m_idx}"))
                 click.echo("-" * 100)
         else:

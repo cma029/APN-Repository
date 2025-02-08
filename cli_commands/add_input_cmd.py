@@ -6,6 +6,7 @@ from typing import List
 from user_input_parser import PolynomialParser
 from storage.json_storage_utils import load_input_apns, save_input_apns
 from apn_properties import compute_apn_properties
+from cli_commands.invariants_utils import compute_apn_invariants
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
 from cli_commands.cli_utils import format_generic_apn
@@ -30,51 +31,6 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
         click.echo("Error: --field-n is required.", err=True)
         return
 
-    def compute_invariants_for_apn(apn: APN):
-        try:
-            apn_tt = apn.get_truth_table()
-            tt = apn_tt.representation.truth_table
-        except Exception as e:
-            click.echo(f"Error converting APN to truth table: {e}", err=True)
-            return
-
-        from computations.rank.delta_rank import DeltaRankComputation
-        from computations.rank.gamma_rank import GammaRankComputation
-        from computations.spectra.od_differential_spectrum import ODDifferentialSpectrumComputation
-        from computations.spectra.od_walsh_spectrum import ODWalshSpectrumComputation
-
-        try:
-            d_rank = DeltaRankComputation().compute_rank(apn_tt)
-            apn.invariants["delta_rank"] = d_rank
-        except Exception as e:
-            click.echo(f"Error computing Delta Rank: {e}", err=True)
-            apn.invariants["delta_rank"] = None
-
-        try:
-            g_rank = GammaRankComputation().compute_rank(apn_tt)
-            apn.invariants["gamma_rank"] = g_rank
-        except Exception as e:
-            click.echo(f"Error computing Gamma Rank: {e}", err=True)
-            apn.invariants["gamma_rank"] = None
-
-        is_quad = apn.properties.get("is_quadratic", False)
-        if is_quad:
-            try:
-                odds_res = ODDifferentialSpectrumComputation().compute_spectrum(apn_tt)
-                apn.invariants["odds"] = {int(k): int(v) for k, v in odds_res.items()}
-            except Exception as e:
-                click.echo(f"Error computing OD Differential Spectrum: {e}", err=True)
-                apn.invariants["odds"] = "non-quadratic"
-            try:
-                odws_res = ODWalshSpectrumComputation().compute_spectrum(apn_tt)
-                apn.invariants["odws"] = {int(k): int(v) for k, v in odws_res.items()}
-            except Exception as e:
-                click.echo(f"Error computing OD Extended Walsh Spectrum: {e}", err=True)
-                apn.invariants["odws"] = "non-quadratic"
-        else:
-            apn.invariants["odds"] = "non-quadratic"
-            apn.invariants["odws"] = "non-quadratic"
-
     # Univariate polynomials as input.
     for poly_str in poly:
         try:
@@ -92,7 +48,7 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
         # If not a duplicate, then create the new APN.
         apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
         compute_apn_properties(apn)
-        compute_invariants_for_apn(apn)
+        compute_apn_invariants(apn)
 
         added_apns.append(apn)
         existing_keys.add(candidate_key)
@@ -116,8 +72,9 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
                 return
             tt_repr = TruthTableRepresentation(tt_values)
             apn_tt = APN.from_representation(tt_repr, n_val, irr_poly)
+
             compute_apn_properties(apn_tt)
-            compute_invariants_for_apn(apn_tt)
+            compute_apn_invariants(apn_tt)
 
             # Unique key to check for duplicates.
             poly_tuples = apn_tt.representation.univariate_polynomial
@@ -131,10 +88,7 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             click.echo(f"Error reading .tt file {fpath}: {e}", err=True)
             return
 
-    # Add newly added APNs to main list.
     apn_list.extend(added_apns)
-
-    # Save the updated list to input_apns.json.
     save_input_apns(apn_list)
 
     # Formatted printout of the newly added APNs.
@@ -146,7 +100,6 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             click.echo("-" * 100)
 
 def _create_apn_key(apn: APN) -> str:
-    # Create a unique key from the APN's field_n, irr_poly, and polynomial.
     field_n = apn.field_n
     irr_poly = apn.irr_poly
     poly_list = apn.representation.univariate_polynomial

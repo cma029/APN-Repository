@@ -1,12 +1,10 @@
-# json_storage_utils.py
-# Description: Central module for working with JSON-based storage.
-
 import os
 import json
 import click
 from typing import List, Dict
 from user_input_parser import PolynomialParser
 from apn_object import APN
+from cli_commands.cli_utils import polynomial_to_str
 
 STORAGE_DIR = "storage"
 INPUT_APNS_FILE = os.path.join(STORAGE_DIR, "input_apns.json")
@@ -51,10 +49,12 @@ def save_input_apns(apn_list: List[APN]) -> None:
     ensure_storage_folder()
     data = []
     for apn in apn_list:
+        poly_str_val = polynomial_to_str(apn.representation.univariate_polynomial)
         apn_data = {
             "field_n": apn.field_n,
             "irr_poly": apn.irr_poly,
             "poly": apn.representation.univariate_polynomial,
+            "poly_str": poly_str_val,
             "properties": apn.properties,
             "invariants": apn.invariants
         }
@@ -108,10 +108,12 @@ def save_match_list(match_list_data: Dict[int, List]) -> None:
     for apn_idx, matches in match_list_data.items():
         serializable_matches = []
         for match_apn, comp_types in matches:
+            poly_str_val = polynomial_to_str(match_apn.representation.univariate_polynomial)
             match_data = {
                 "field_n": match_apn.field_n,
                 "irr_poly": match_apn.irr_poly,
                 "poly": match_apn.representation.univariate_polynomial,
+                "poly_str": poly_str_val,
                 "properties": match_apn.properties,
                 "invariants": match_apn.invariants,
                 "compare_types": list(comp_types)
@@ -137,6 +139,25 @@ def load_equivalence_list() -> List[dict]:
 def save_equivalence_list(eq_list: List[dict]) -> None:
     # Writes the list of equivalences to equivalence_list.json.
     ensure_storage_folder()
+    updated_records = []
+    for record in eq_list:
+        new_rec = {}
+        new_rec["eq_type"] = record.get("eq_type", "")
+
+        in_apn_data = record.get("input_apn", {})
+        if "poly" in in_apn_data:
+            if isinstance(in_apn_data["poly"], list):
+                in_apn_data["poly_str"] = polynomial_to_str(in_apn_data["poly"])
+        new_rec["input_apn"] = in_apn_data
+
+        matched_apn_data = record.get("matched_apn", {})
+        if "poly" in matched_apn_data:
+            if isinstance(matched_apn_data["poly"], list):
+                matched_apn_data["poly_str"] = polynomial_to_str(matched_apn_data["poly"])
+        new_rec["matched_apn"] = matched_apn_data
+
+        updated_records.append(new_rec)
+
     with open(EQUIV_LIST_FILE, "w", encoding="utf-8") as f:
-        json.dump(eq_list, f, indent=2)
+        json.dump(updated_records, f, indent=2)
     click.echo(f"Equivalence list saved to {EQUIV_LIST_FILE}")

@@ -1,5 +1,3 @@
-# uni3to1_cmd.py
-
 import click
 from storage.json_storage_utils import (
     load_input_apns, save_input_apns,

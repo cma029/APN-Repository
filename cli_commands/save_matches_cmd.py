@@ -1,4 +1,3 @@
-# save_matches_cmd.py
 import click
 import json
 from cli_commands.cli_utils import polynomial_to_str

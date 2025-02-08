@@ -1,6 +1,3 @@
-# cli_utils.py
-# Description: Provides utility functions for CLI commands.
-
 from collections import OrderedDict
 from apn_object import APN
 

@@ -1,9 +1,7 @@
-# print_matches_cmd.py
-
 import click
 from apn_object import APN
 from storage.json_storage_utils import load_input_apns, load_match_list
-from cli_commands.cli_utils import format_input_apn, format_matched_apn
+from cli_commands.cli_utils import format_generic_apn
 from user_input_parser import PolynomialParser
 
 @click.command("print-matches")
@@ -24,14 +22,16 @@ def print_matches_cli(input_apn_index):
     if input_apn_index is None:
         # Print matches for all input APNs in match_list_data.
         for idx, matches in match_list_data.items():
-            _print_input_apn(apn_list[idx], idx)
+            click.echo(format_generic_apn(apn_list[idx], f"\nINPUT_APN {idx}"))
+            click.echo("-" * 100)
+
             click.echo(f"Matches found: {len(matches)}")
             if matches:
                 for m_idx, (match_apn, comp_types) in enumerate(matches, start=1):
                     compare_str = sorted(comp_types) 
                     click.echo(f"  - Matched on {compare_str} with:")
                     click.echo("-" * 100)
-                    click.echo(format_matched_apn(match_apn, idx, m_idx))
+                    click.echo(format_generic_apn(match_apn, f"Matched APN #{idx}.{m_idx}"))
                     click.echo("-" * 100)
             else:
                 click.echo("  - No matches.")
@@ -43,21 +43,19 @@ def print_matches_cli(input_apn_index):
         if input_apn_index not in match_list_data:
             click.echo(f"No matches exist for INPUT_APN {input_apn_index}.")
             return
-        
+
         matches = match_list_data[input_apn_index]
-        _print_input_apn(apn_list[input_apn_index], input_apn_index)
+        click.echo(f"\nINPUT_APN {input_apn_index}:")
+        click.echo(format_generic_apn(apn_list[input_apn_index], f"INPUT_APN {input_apn_index}"))
+        click.echo("-" * 100)
+
         click.echo(f"Matches found: {len(matches)}")
         if matches:
             for m_idx, (match_apn, comp_types) in enumerate(matches, start=1):
                 compare_str = sorted(comp_types)
                 click.echo(f"  - Matched on {compare_str} with:")
                 click.echo("-" * 100)
-                click.echo(format_matched_apn(match_apn, input_apn_index, m_idx))
+                click.echo(format_generic_apn(match_apn, f"Matched APN #{input_apn_index}.{m_idx}"))
                 click.echo("-" * 100)
         else:
             click.echo("  - No matches.")
-
-def _print_input_apn(apn: APN, index: int):
-    click.echo(f"")
-    click.echo(format_input_apn(apn, index))
-    click.echo("-" * 100)

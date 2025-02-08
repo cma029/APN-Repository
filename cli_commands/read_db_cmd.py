@@ -3,7 +3,7 @@
 
 import click
 from apn_storage_pandas import load_apn_objects_for_field_pandas
-from cli_commands.cli_utils import polynomial_to_str, reorder_invariants
+from cli_commands.cli_utils import format_generic_apn
 from typing import Optional
 from apn_object import APN
 
@@ -36,19 +36,7 @@ def read_db_apns(field_n, apn_range):
         start_offset = 1
 
     click.echo(f"APN GF(2^{field_n}) Details:")
-    click.echo("-" * 60)
+    click.echo("-" * 100)
     for i, apn in enumerate(subset, start=start_offset):
-        click.echo(_format_apn_detailed(apn, i))
-        click.echo("-" * 60)
-
-def _format_apn_detailed(apn: APN, index: int) -> str:
-    # Formats a single APN with its properties and invariants.
-    props_str = str(apn.properties)
-    invs_str = str(reorder_invariants(apn.invariants))
-    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
-
-    lines = []
-    lines.append(f"APN {index}: Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
-    lines.append(f"  Properties: {props_str}")
-    lines.append(f"  Invariants: {invs_str}")
-    return "\n".join(lines)
+        click.echo(format_generic_apn(apn, f"APN {i}"))
+        click.echo("-" * 100)

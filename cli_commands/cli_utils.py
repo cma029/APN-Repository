@@ -2,6 +2,7 @@
 # Description: Provides utility functions for CLI commands.
 
 from collections import OrderedDict
+from apn_object import APN
 
 def polynomial_to_str(univ_poly):
     # Convert a list of ([coefficient_exp, monomial_exp]) into a univariate polynomial string.
@@ -27,8 +28,44 @@ def reorder_invariants(invariants: dict) -> dict:
     for key in desired_order:
         if key in invariants:
             reordered[key] = invariants[key]
-    # Append any other invariants that are not in the desired_order
+    # Append any other invariants not in desired_order.
     for k in invariants:
         if k not in desired_order:
             reordered[k] = invariants[k]
     return dict(reordered)
+
+def format_input_apn(apn: APN, index: int) -> str:
+    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+    props_str = str(apn.properties)
+    invs_str = str(reorder_invariants(apn.invariants))
+
+    lines = []
+    lines.append(f"INPUT_APN {index}:")
+    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
+    lines.append(f"  Properties: {props_str}")
+    lines.append(f"  Invariants: {invs_str}")
+    return "\n".join(lines)
+
+def format_matched_apn(apn: APN, input_index: int, match_index: int) -> str:
+    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+    props_str = str(apn.properties)
+    invs_str = str(reorder_invariants(apn.invariants))
+
+    lines = []
+    lines.append(f"Matched APN #{input_index}.{match_index}:")
+    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
+    lines.append(f"  Properties: {props_str}")
+    lines.append(f"  Invariants: {invs_str}")
+    return "\n".join(lines)
+
+def format_generic_apn(apn: APN, label: str) -> str:
+    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+    props_str = str(apn.properties)
+    invs_str = str(reorder_invariants(apn.invariants))
+
+    lines = []
+    lines.append(f"{label}:")
+    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
+    lines.append(f"  Properties: {props_str}")
+    lines.append(f"  Invariants: {invs_str}")
+    return "\n".join(lines)

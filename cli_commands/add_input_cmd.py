@@ -1,5 +1,6 @@
 import click
 import ast
+import json
 from pathlib import Path
 from typing import List
 from user_input_parser import PolynomialParser
@@ -7,7 +8,7 @@ from storage.json_storage_utils import load_input_apns, save_input_apns
 from apn_properties import compute_apn_properties
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
-from cli_commands.cli_utils import polynomial_to_str, reorder_invariants
+from cli_commands.cli_utils import format_generic_apn
 
 @click.command("add-input")
 @click.option("--poly", "-p", multiple=True)
@@ -18,6 +19,9 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
     # Adds user-specified univariate polynomial or .tt files to input_apns.json. 
     apn_list = load_input_apns()
     parser = PolynomialParser()
+
+    # Create a set of existing keys so we can skip duplicates
+    existing_keys = set(_create_apn_key(apn) for apn in apn_list)
 
     # Separate list to store newly added APNs.
     added_apns = []
@@ -34,17 +38,10 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             click.echo(f"Error converting APN to truth table: {e}", err=True)
             return
 
-        from computations.rank.gamma_rank import GammaRankComputation
         from computations.rank.delta_rank import DeltaRankComputation
+        from computations.rank.gamma_rank import GammaRankComputation
         from computations.spectra.od_differential_spectrum import ODDifferentialSpectrumComputation
         from computations.spectra.od_walsh_spectrum import ODWalshSpectrumComputation
-
-        try:
-            g_rank = GammaRankComputation().compute_rank(apn_tt)
-            apn.invariants["gamma_rank"] = g_rank
-        except Exception as e:
-            click.echo(f"Error computing Gamma Rank: {e}", err=True)
-            apn.invariants["gamma_rank"] = None
 
         try:
             d_rank = DeltaRankComputation().compute_rank(apn_tt)
@@ -52,6 +49,13 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
         except Exception as e:
             click.echo(f"Error computing Delta Rank: {e}", err=True)
             apn.invariants["delta_rank"] = None
+
+        try:
+            g_rank = GammaRankComputation().compute_rank(apn_tt)
+            apn.invariants["gamma_rank"] = g_rank
+        except Exception as e:
+            click.echo(f"Error computing Gamma Rank: {e}", err=True)
+            apn.invariants["gamma_rank"] = None
 
         is_quad = apn.properties.get("is_quadratic", False)
         if is_quad:
@@ -71,17 +75,27 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             apn.invariants["odds"] = "non-quadratic"
             apn.invariants["odws"] = "non-quadratic"
 
-    # Univariate polynomials as input
+    # Univariate polynomials as input.
     for poly_str in poly:
         try:
             poly_tuples = ast.literal_eval(poly_str)
-            apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
-            compute_apn_properties(apn)
-            compute_invariants_for_apn(apn)
-            added_apns.append(apn)
         except Exception as e:
             click.echo(f"Error parsing user polynomial {poly_str}: {e}", err=True)
             return
+
+        # Unique key to check for duplicates.
+        candidate_key = _create_poly_key(field_n, irr_poly, poly_tuples)
+        if candidate_key in existing_keys:
+            click.echo(f"Skipped adding polynomial {poly_str} (already in input_apns).")
+            continue  # Skip duplicates
+
+        # If not a duplicate, then create the new APN.
+        apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
+        compute_apn_properties(apn)
+        compute_invariants_for_apn(apn)
+
+        added_apns.append(apn)
+        existing_keys.add(candidate_key)
 
     # Input from .tt files
     for fpath in poly_file:
@@ -104,7 +118,15 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             apn_tt = APN.from_representation(tt_repr, n_val, irr_poly)
             compute_apn_properties(apn_tt)
             compute_invariants_for_apn(apn_tt)
+
+            # Unique key to check for duplicates.
+            poly_tuples = apn_tt.representation.univariate_polynomial
+            candidate_key = _create_poly_key(n_val, irr_poly, poly_tuples)
+            if candidate_key in existing_keys:
+                click.echo(f"Skipped adding .tt file polynomial from {fpath} (already in input_apns).")
+                continue
             added_apns.append(apn_tt)
+            existing_keys.add(candidate_key)
         except Exception as e:
             click.echo(f"Error reading .tt file {fpath}: {e}", err=True)
             return
@@ -115,23 +137,22 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
     # Save the updated list to input_apns.json.
     save_input_apns(apn_list)
 
-    # Formated printout of the newly added APNs.
+    # Formatted printout of the newly added APNs.
     if added_apns:
-        click.echo("")
-        click.echo("Newly Added APNs:")
-        click.echo("-" * 60)
+        click.echo("\nNewly Added APNs:")
+        click.echo("-" * 100)
         for i, apn in enumerate(added_apns, start=1):
-            click.echo(_format_apn_detailed(apn, i))
-            click.echo("-" * 60)
+            click.echo(format_generic_apn(apn, f"APN {i}"))
+            click.echo("-" * 100)
 
-def _format_apn_detailed(apn: APN, index: int) -> str:
-    # Format the APNs using the cli_utils.py functions.
-    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
-    props_str = str(apn.properties)
-    invs_str = str(reorder_invariants(apn.invariants))
+def _create_apn_key(apn: APN) -> str:
+    # Create a unique key from the APN's field_n, irr_poly, and polynomial.
+    field_n = apn.field_n
+    irr_poly = apn.irr_poly
+    poly_list = apn.representation.univariate_polynomial
+    return _create_poly_key(field_n, irr_poly, poly_list)
 
-    lines = []
-    lines.append(f"APN {index}: Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
-    lines.append(f"  Properties: {props_str}")
-    lines.append(f"  Invariants: {invs_str}")
-    return "\n".join(lines)
+def _create_poly_key(field_n: int, irr_poly: str, poly_list: list) -> str:
+    sorted_poly = sorted(poly_list, key=lambda tup: (tup[1], tup[0]))
+    key_obj = [field_n, irr_poly, sorted_poly]
+    return json.dumps(key_obj)

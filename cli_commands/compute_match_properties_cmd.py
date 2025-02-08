@@ -1,11 +1,13 @@
 # compute_match_properties_cmd.py
 
 import click
+from typing import List
 from storage.json_storage_utils import (
     load_input_apns, save_input_apns,
     load_match_list, save_match_list
 )
 from apn_properties import compute_apn_properties
+from cli_commands.cli_utils import format_generic_apn, format_matched_apn
 from apn_object import APN
 
 @click.command("compute-match-properties")
@@ -25,21 +27,36 @@ def compute_match_properties_cli(input_apn_index):
 
     def compute_for_apn(apn: APN):
         compute_apn_properties(apn)
-        click.echo(f"Computed properties for:\n{apn}")
 
     if input_apn_index is None:
+        # Process all input APNs.
         for idx, matches in match_list_data.items():
             input_apn = apn_list[idx]
             compute_for_apn(input_apn)
-            for (m_apn, _) in matches:
-                compute_for_apn(m_apn)
+
+            # Print the input APN.
+            click.echo(format_generic_apn(input_apn, f"INPUT_APN {idx}"))
+            click.echo("-" * 60)
+
+            if matches:
+                # Print each matched APN for this input APN.
+                for m_idx, (m_apn, _) in enumerate(matches, start=1):
+                    compute_for_apn(m_apn)
+                    click.echo(format_matched_apn(m_apn, idx, m_idx))
+                    click.echo("-" * 60)
+            else:
+                click.echo(f"No matches for Input APN #{idx}.\n")
+
         save_input_apns(apn_list)
         save_match_list(match_list_data)
         click.echo("Finished computing properties for all matched APNs (and saved updates).")
+
     else:
+        # Process only one input APN (by given index).
         if input_apn_index < 0 or input_apn_index >= len(apn_list):
             click.echo("Invalid input APN index.")
             return
+
         if input_apn_index not in match_list_data or not match_list_data[input_apn_index]:
             click.echo("No matches in match-list for this APN index. Run 'compare' first.")
             return
@@ -48,8 +65,16 @@ def compute_match_properties_cli(input_apn_index):
         matches = match_list_data[input_apn_index]
 
         compute_for_apn(input_apn)
-        for (m_apn, _) in matches:
-            compute_for_apn(m_apn)
+        click.echo(format_generic_apn(input_apn, f"INPUT_APN {input_apn_index}"))
+        click.echo("-" * 100)
+
+        if matches:
+            for m_idx, (m_apn, _) in enumerate(matches, start=1):
+                compute_for_apn(m_apn)
+                click.echo(format_matched_apn(m_apn, input_apn_index, m_idx))
+                click.echo("-" * 100)
+        else:
+            click.echo(f"No matches for Input APN #{input_apn_index}.\n")
 
         save_input_apns(apn_list)
         save_match_list(match_list_data)

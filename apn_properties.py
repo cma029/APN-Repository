@@ -68,6 +68,7 @@ def compute_apn_properties(apn):
             # We use "non-uniform" as the placeholder.
             apn.properties["k_to_1"] = "non-uniform"
 
+        """
         # 9) If k_to_1 == "3-to-1", we check if it is a canonical triplicate (uniform)
         # using is_canonical_triplicate_python. Otherwise, set False.
         if apn.properties["k_to_1"] == "3-to-1":
@@ -77,7 +78,7 @@ def compute_apn_properties(apn):
             apn.properties["uniformly_distributed"] = bool(is_can)
         else:
             apn.properties["uniformly_distributed"] = False
-
+        """
     else:
         print("No univariate polynomial found; skipping property calculations.")
 

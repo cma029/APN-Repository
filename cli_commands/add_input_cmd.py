@@ -1,6 +1,7 @@
 import click
 import ast
 import json
+import concurrent.futures
 from pathlib import Path
 from typing import List
 from user_input_parser import PolynomialParser
@@ -10,6 +11,15 @@ from cli_commands.invariants_utils import compute_apn_invariants
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
 from cli_commands.cli_utils import format_generic_apn
+
+def compute_parallel(apn_data):
+    apn, idx = apn_data
+    try:
+        compute_apn_properties(apn)
+        compute_apn_invariants(apn)
+        return (idx, apn, None)  # None is for no error.
+    except Exception as e:
+        return (idx, None, f"Error computing properties/invariants: {e}")
 
 @click.command("add-input")
 @click.option("--poly", "-p", multiple=True)
@@ -24,8 +34,8 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
     # Create a set of existing keys so we can skip duplicates
     existing_keys = set(_create_apn_key(apn) for apn in apn_list)
 
-    # Separate list to store newly added APNs.
-    added_apns = []
+    # Separate list to store newly added APNs (before concurrency).
+    precomputed_apns = []
 
     if field_n is None:
         click.echo("Error: --field-n is required.", err=True)
@@ -45,12 +55,13 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             click.echo(f"Skipped adding polynomial {poly_str} (already in input_apns).")
             continue  # Skip duplicates
 
-        # If not a duplicate, then create the new APN.
-        apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
-        compute_apn_properties(apn)
-        compute_apn_invariants(apn)
+        try:
+            apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
+        except Exception as e:
+            click.echo(f"Error building APN from polynomial {poly_str}: {e}", err=True)
+            continue
 
-        added_apns.append(apn)
+        precomputed_apns.append(apn)
         existing_keys.add(candidate_key)
 
     # Input from .tt files
@@ -70,11 +81,13 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             if len(tt_values) != expected_len:
                 click.echo(f"Incorrect TT length in {fpath}, expected {expected_len}, got {len(tt_values)}", err=True)
                 return
-            tt_repr = TruthTableRepresentation(tt_values)
-            apn_tt = APN.from_representation(tt_repr, n_val, irr_poly)
 
-            compute_apn_properties(apn_tt)
-            compute_apn_invariants(apn_tt)
+            # Build the APN immediately in the main thread.
+            apn_tt = APN.from_representation(
+                TruthTableRepresentation(tt_values),
+                n_val,
+                irr_poly
+            )
 
             # Unique key to check for duplicates.
             poly_tuples = apn_tt.representation.univariate_polynomial
@@ -82,20 +95,43 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             if candidate_key in existing_keys:
                 click.echo(f"Skipped adding .tt file polynomial from {fpath} (already in input_apns).")
                 continue
-            added_apns.append(apn_tt)
+            precomputed_apns.append(apn_tt)
             existing_keys.add(candidate_key)
         except Exception as e:
             click.echo(f"Error reading .tt file {fpath}: {e}", err=True)
             return
 
-    apn_list.extend(added_apns)
+    # Store APNs in an enumerated list to preserve final order.
+    tasks_for_pool = [(apn, i) for i, apn in enumerate(precomputed_apns)]
+    results = [None]*len(tasks_for_pool)
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        future_map = {executor.submit(compute_parallel, t): t[1] for t in tasks_for_pool}
+
+        for fut in concurrent.futures.as_completed(future_map):
+            index_in_list = future_map[fut]
+            try:
+                idx, apn_or_none, err = fut.result()
+                if err:
+                    click.echo(err, err=True)
+                    results[idx] = None
+                else:
+                    results[idx] = apn_or_none
+            except Exception as e:
+                click.echo(f"Concurrency error: {e}", err=True)
+                results[index_in_list] = None
+
+    # Filter out the None's.
+    final_apns = [r for r in results if r is not None]
+
+    apn_list.extend(final_apns)
     save_input_apns(apn_list)
 
     # Formatted printout of the newly added APNs.
-    if added_apns:
+    if final_apns:
         click.echo("\nNewly Added APNs:")
         click.echo("-" * 100)
-        for i, apn in enumerate(added_apns, start=1):
+        for i, apn in enumerate(final_apns, start=1):
             click.echo(format_generic_apn(apn, f"APN {i}"))
             click.echo("-" * 100)
 

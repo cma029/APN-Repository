@@ -31,30 +31,6 @@ def reorder_invariants(invariants: dict) -> dict:
             reordered[k] = invariants[k]
     return dict(reordered)
 
-def format_input_apn(apn: APN, index: int) -> str:
-    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
-    props_str = str(apn.properties)
-    invs_str = str(reorder_invariants(apn.invariants))
-
-    lines = []
-    lines.append(f"INPUT_APN {index}:")
-    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
-    lines.append(f"  Properties: {props_str}")
-    lines.append(f"  Invariants: {invs_str}")
-    return "\n".join(lines)
-
-def format_matched_apn(apn: APN, input_index: int, match_index: int) -> str:
-    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
-    props_str = str(apn.properties)
-    invs_str = str(reorder_invariants(apn.invariants))
-
-    lines = []
-    lines.append(f"Matched APN #{input_index}.{match_index}:")
-    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
-    lines.append(f"  Properties: {props_str}")
-    lines.append(f"  Invariants: {invs_str}")
-    return "\n".join(lines)
-
 def format_generic_apn(apn: APN, label: str) -> str:
     poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
     props_str = str(apn.properties)

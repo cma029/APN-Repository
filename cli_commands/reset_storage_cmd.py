@@ -2,25 +2,22 @@ import os
 import click
 
 from storage.json_storage_utils import (
-    STORAGE_DIR, INPUT_APNS_FILE, MATCH_LIST_FILE, EQUIV_LIST_FILE
+    INPUT_APNS_AND_MATCHES_FILE,
+    EQUIVALENCE_LIST_FILE
 )
 
 @click.command("reset-storage")
 @click.option("--yes", "-y", is_flag=True)
 def reset_storage_cli(yes):
-    # Removes input_apns.json, match_list.json, equivalence_list.json from 'storage' folder.
+    # Removes all stored files: input_apns_and_matches.json and equivalence_list.json.
     if not yes:
         click.confirm(
-            "Are you sure you want to erase all stored input APNs, match lists, and equivalences? "
+            "Are you sure you want to erase all stored APNs and equivalences? "
             "This action cannot be undone.",
             abort=True
         )
 
-    files_to_delete = [
-        INPUT_APNS_FILE,
-        MATCH_LIST_FILE,
-        EQUIV_LIST_FILE
-    ]
+    files_to_delete = [INPUT_APNS_AND_MATCHES_FILE, EQUIVALENCE_LIST_FILE]
 
     deleted_files = []
     for file in files_to_delete:

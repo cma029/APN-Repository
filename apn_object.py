@@ -1,6 +1,3 @@
-# apn_object.py
-# Description: Class for representing APN functions.
-
 from representations.univariate_polynomial_representation import UnivariatePolynomialRepresentation
 from representations.abstract_representation import Representation
 
@@ -13,8 +10,7 @@ class APN:
         self.field_n = field_n
         self.irr_poly = irr_poly
 
-        # Properties and invariants sheet
-        self.properties = {}
+        # Single dictionary for invariants.
         self.invariants = {}
 
     @classmethod
@@ -31,8 +27,7 @@ class APN:
         apn.field_n = field_n
         apn.irr_poly = irr_poly
 
-        # Properties and invariants sheet
-        apn.properties = {}
+        # Single dictionary for invariants.
         apn.invariants = {}
 
         return apn
@@ -52,5 +47,4 @@ class APN:
 
     def __repr__(self):
         return (f"APN(representation={self.representation}, field_n={self.field_n}, "
-                f"irr_poly='{self.irr_poly}', properties={self.properties}, "
-                f"invariants={self.invariants})")
+                f"irr_poly='{self.irr_poly}', invariants={self.invariants})")

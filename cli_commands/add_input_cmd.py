@@ -5,41 +5,42 @@ import concurrent.futures
 from pathlib import Path
 from typing import List
 from user_input_parser import PolynomialParser
-from storage.json_storage_utils import load_input_apns, save_input_apns
-from apn_properties import compute_apn_properties
-from cli_commands.invariants_utils import compute_apn_invariants
+from storage.json_storage_utils import (
+    load_input_apns_and_matches,
+    save_input_apns_and_matches
+)
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
 from cli_commands.cli_utils import format_generic_apn
+from apn_invariants import compute_is_apn
 
-def compute_parallel(apn_data):
-    apn, idx = apn_data
-    try:
-        compute_apn_properties(apn)
-        compute_apn_invariants(apn)
-        return (idx, apn, None)  # None is for no error.
-    except Exception as e:
-        return (idx, None, f"Error computing properties/invariants: {e}")
 
 @click.command("add-input")
-@click.option("--poly", "-p", multiple=True)
-@click.option("--poly-file", type=click.Path(exists=True), multiple=True)
-@click.option("--field-n", default=None, type=int)
+@click.option("--poly", "-p", multiple=True, help="Univariate Polynomial in the form [(0,3), (1,9), ...]")
+@click.option("--poly-file", type=click.Path(exists=True), multiple=True,
+              help="Truth Table file (.tt) with 'n' on the first line and the Truth Table on the second.")
+@click.option("--field-n", default=None, type=int, required=True)
 @click.option("--irr-poly", default="", type=str)
-def add_input_cli(poly, poly_file, field_n, irr_poly):
-    # Adds user-specified univariate polynomial or .tt files to input_apns.json. 
-    apn_list = load_input_apns()
+@click.option("--max-threads", default=None, type=int,
+              help="Limit the number of parallel processes used. Default uses all available cores.")
+def add_input_cli(poly, poly_file, field_n, irr_poly, max_threads):
+    # Adds user-specified univariate polynomial or .tt files to input_apns_and_matches.json.
     parser = PolynomialParser()
 
-    # Create a set of existing keys so we can skip duplicates
-    existing_keys = set(_create_apn_key(apn) for apn in apn_list)
+    # Load existing data.
+    apn_list = load_input_apns_and_matches()
 
-    # Separate list to store newly added APNs (before concurrency).
-    precomputed_apns = []
+    # Build a set of existing keys so we can skip duplicates.
+    existing_keys = set()
+    for apn_dict in apn_list:
+        k = _create_poly_key(
+            apn_dict["poly"], 
+            apn_dict["field_n"], 
+            apn_dict["irr_poly"]
+        )
+        existing_keys.add(k)
 
-    if field_n is None:
-        click.echo("Error: --field-n is required.", err=True)
-        return
+    new_apns = []
 
     # Univariate polynomials as input.
     for poly_str in poly:
@@ -47,21 +48,16 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
             poly_tuples = ast.literal_eval(poly_str)
         except Exception as e:
             click.echo(f"Error parsing user polynomial {poly_str}: {e}", err=True)
-            return
-
-        # Unique key to check for duplicates.
-        candidate_key = _create_poly_key(field_n, irr_poly, poly_tuples)
-        if candidate_key in existing_keys:
-            click.echo(f"Skipped adding polynomial {poly_str} (already in input_apns).")
-            continue  # Skip duplicates
-
-        try:
-            apn = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
-        except Exception as e:
-            click.echo(f"Error building APN from polynomial {poly_str}: {e}", err=True)
             continue
 
-        precomputed_apns.append(apn)
+        # Unique key to check for duplicates. If APN already exist in the file, skip.
+        candidate_key = _create_poly_key(poly_tuples, field_n, irr_poly)
+        if candidate_key in existing_keys:
+            click.echo(f"Skipped duplicate polynomial {poly_str} (already in file).")
+            continue
+
+        apn_obj = parser.parse_univariate_polynomial(poly_tuples, field_n, irr_poly)
+        new_apns.append(apn_obj)
         existing_keys.add(candidate_key)
 
     # Input from .tt files
@@ -69,79 +65,99 @@ def add_input_cli(poly, poly_file, field_n, irr_poly):
         p = Path(fpath)
         if not p.is_file():
             click.echo(f"Error: File {fpath} not found.", err=True)
-            return
+            continue
         try:
             lines = p.read_text().splitlines()
             if len(lines) < 2:
-                click.echo(f"File {fpath} does not have enough lines.", err=True)
-                return
+                click.echo(f"File {fpath} missing lines.", err=True)
+                continue
             n_val = int(lines[0].strip())
             tt_values = list(map(int, lines[1].strip().split()))
-            expected_len = 1 << n_val
-            if len(tt_values) != expected_len:
-                click.echo(f"Incorrect TT length in {fpath}, expected {expected_len}, got {len(tt_values)}", err=True)
-                return
+            if len(tt_values) != (1 << n_val):
+                click.echo(f"Incorrect TT length for {fpath}.", err=True)
+                continue
 
-            # Build the APN immediately in the main thread.
-            apn_tt = APN.from_representation(
-                TruthTableRepresentation(tt_values),
-                n_val,
+            # Unique key to check for duplicates. If APN already exist in the file, skip.
+            candidate_key = _create_poly_key([("TT", sum(tt_values))], n_val, irr_poly)
+            if candidate_key in existing_keys:
+                click.echo(f"Skipped duplicate TT from {fpath} (already in file).")
+                continue
+
+            from_truth = APN.from_representation(
+                TruthTableRepresentation(tt_values), 
+                n_val, 
                 irr_poly
             )
-
-            # Unique key to check for duplicates.
-            poly_tuples = apn_tt.representation.univariate_polynomial
-            candidate_key = _create_poly_key(n_val, irr_poly, poly_tuples)
-            if candidate_key in existing_keys:
-                click.echo(f"Skipped adding .tt file polynomial from {fpath} (already in input_apns).")
-                continue
-            precomputed_apns.append(apn_tt)
+            new_apns.append(from_truth)
             existing_keys.add(candidate_key)
         except Exception as e:
             click.echo(f"Error reading .tt file {fpath}: {e}", err=True)
-            return
 
-    # Store APNs in an enumerated list to preserve final order.
-    tasks_for_pool = [(apn, i) for i, apn in enumerate(precomputed_apns)]
-    results = [None]*len(tasks_for_pool)
+    if not new_apns:
+        click.echo("No new APNs were added.")
+        return
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        future_map = {executor.submit(compute_parallel, t): t[1] for t in tasks_for_pool}
+    # Concurrent Differential Uniformity check: is_apn. If not APN, we skip it.
+    tasks = [(i, apn) for i, apn in enumerate(new_apns)]
+    max_workers = max_threads if max_threads else None
+    results_map = {}
 
-        for fut in concurrent.futures.as_completed(future_map):
-            index_in_list = future_map[fut]
-            try:
-                idx, apn_or_none, err = fut.result()
-                if err:
-                    click.echo(err, err=True)
-                    results[idx] = None
-                else:
-                    results[idx] = apn_or_none
-            except Exception as e:
-                click.echo(f"Concurrency error: {e}", err=True)
-                results[index_in_list] = None
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futs = [executor.submit(_check_task, t) for t in tasks]
+        for fut in concurrent.futures.as_completed(futs):
+            iidx, updated_apn = fut.result()
+            results_map[iidx] = updated_apn
 
-    # Filter out the None's.
-    final_apns = [r for r in results if r is not None]
+    # Filter out non-APN.
+    final_added_apns = []
+    for i in range(len(new_apns)):
+        apn_ = results_map.get(i)
+        if apn_ and apn_.invariants.get("is_apn", False):
+            final_added_apns.append(apn_)
 
-    apn_list.extend(final_apns)
-    save_input_apns(apn_list)
+    if not final_added_apns:
+        click.echo("The new APNs are actually not APNs (differential uniformity != 2).")
+        return
 
-    # Formatted printout of the newly added APNs.
-    if final_apns:
+    new_entries = []
+    for apn_ in final_added_apns:
+        entry = {
+            "poly": apn_.representation.univariate_polynomial,
+            "field_n": apn_.field_n,
+            "irr_poly": apn_.irr_poly,
+            "invariants": apn_.invariants,
+            "matches": []
+        }
+        new_entries.append(entry)
+
+    apn_list.extend(new_entries)
+    save_input_apns_and_matches(apn_list)
+
+    # Print newly added APNs with format_generic_apn.
+    if new_entries:
         click.echo("\nNewly Added APNs:")
         click.echo("-" * 100)
-        for i, apn in enumerate(final_apns, start=1):
-            click.echo(format_generic_apn(apn, f"APN {i}"))
+        for i, entry in enumerate(new_entries, start=1):
+            added_apn = APN(entry["poly"], entry["field_n"], entry["irr_poly"])
+            added_apn.invariants = entry["invariants"]
+            click.echo(format_generic_apn(added_apn, f"APN {i}"))
             click.echo("-" * 100)
 
-def _create_apn_key(apn: APN) -> str:
-    field_n = apn.field_n
-    irr_poly = apn.irr_poly
-    poly_list = apn.representation.univariate_polynomial
-    return _create_poly_key(field_n, irr_poly, poly_list)
 
-def _create_poly_key(field_n: int, irr_poly: str, poly_list: list) -> str:
-    sorted_poly = sorted(poly_list, key=lambda tup: (tup[1], tup[0]))
-    key_obj = [field_n, irr_poly, sorted_poly]
-    return json.dumps(key_obj)
+def _check_task(task):
+    # Top-level function for concurrency to avoid pickling issues.
+    iidx, apn_ = task
+    compute_is_apn(apn_)
+    return (iidx, apn_)
+
+
+def _create_poly_key(poly_list, field_n, irr_poly):
+    try:
+        # If poly_list is a list of (coefficient_exp, monomial_exp), we sort them.
+        sorted_poly = sorted(poly_list, key=lambda x: (x[0], x[1]))
+        key_obj = [field_n, irr_poly, sorted_poly]
+    except:
+        # Fallback:
+        key_obj = [field_n, irr_poly, poly_list]
+
+    return json.dumps(key_obj, sort_keys=True)

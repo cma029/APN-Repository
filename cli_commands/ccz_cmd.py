@@ -1,108 +1,175 @@
 import click
 import concurrent.futures
 from storage.json_storage_utils import (
-    load_input_apns, save_input_apns,
-    load_match_list, save_match_list,
-    load_equivalence_list, save_equivalence_list
+    load_input_apns_and_matches,
+    save_input_apns_and_matches,
+    load_equivalence_list,
+    save_equivalence_list
 )
 from computations.equivalence.ccz_equivalence import CCZEquivalenceTest
 from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
-from typing import Optional
-from user_input_parser import PolynomialParser
-import os
-import json
+from typing import List, Dict, Any
+from collections import defaultdict
 
 @click.command("ccz")
-@click.option("--input-apn-index", default=0, type=int)
-def ccz_equivalence_cli(input_apn_index):
-    # Runs CCZ equivalence check on the matches of a given input APN.
-    apn_list = load_input_apns()
-    match_list_data = load_match_list()
-
-    if input_apn_index < 0 or input_apn_index >= len(apn_list):
-        click.echo("Invalid input APN index.")
+@click.option("--input-apn-index", default=None, type=int,
+              help="If specified, only check the matches of that single input APN.")
+@click.option("--max-threads", default=None, type=int,
+              help="Limit the number of parallel processes used. Default uses all available cores.")
+def ccz_equivalence_cli(input_apn_index, max_threads):
+    # Checks CCZ equivalence for the input APNs listed in input_apns_and_matches.json.
+    input_apn_list = load_input_apns_and_matches()
+    if not input_apn_list:
+        click.echo("No input APNs found in storage/input_apns_and_matches.json.")
         return
 
-    if input_apn_index not in match_list_data or not match_list_data[input_apn_index]:
-        click.echo("No matches in match-list. Run 'compare' first.")
+    if input_apn_index is not None:
+        if input_apn_index < 0 or input_apn_index >= len(input_apn_list):
+            click.echo(f"Invalid input APN index {input_apn_index}.")
+            return
+        chosen_input_apns = [input_apn_list[input_apn_index]]
+        chosen_indices = [input_apn_index]
+    else:
+        chosen_input_apns = input_apn_list
+        chosen_indices = list(range(len(input_apn_list)))
+
+    # Prepare tasks for concurrency; each task => (apn_idx, match_idx, input_tt, match_tt).
+    concurrency_tasks = []
+    input_truth_tables_map = {}
+
+    for offset_index, input_apn_dict in enumerate(chosen_input_apns):
+        apn_index = chosen_indices[offset_index]
+
+        # Build the input APN object and get its truth table.
+        input_apn_object = APN(
+            input_apn_dict["poly"],
+            input_apn_dict["field_n"],
+            input_apn_dict["irr_poly"]
+        )
+        input_apn_object.invariants = input_apn_dict.get("invariants", {})
+        input_truth_table = input_apn_object.get_truth_table().representation.truth_table
+        input_truth_tables_map[apn_index] = input_truth_table
+
+        # Build tasks for each match in this APNs matches list.
+        match_list = input_apn_dict.get("matches", [])
+        for match_index, match_dict in enumerate(match_list):
+            match_apn_object = APN(
+                match_dict["poly"],
+                match_dict["field_n"],
+                match_dict["irr_poly"]
+            )
+            match_apn_object.invariants = match_dict.get("invariants", {})
+            match_truth_table = match_apn_object.get_truth_table().representation.truth_table
+
+            concurrency_tasks.append((apn_index, match_index, input_truth_table, match_truth_table))
+
+    if not concurrency_tasks:
+        click.echo("No matches to test for CCZ equivalence.")
         return
 
-    in_apn = apn_list[input_apn_index]
-    matches = match_list_data[input_apn_index]
-    if not matches:
-        click.echo("No matches to check for CCZ-equivalence.")
-        return
+    # Run concurrency for CCZ checks.
+    ccz_equivalence_results = []
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_threads) as executor:
+        task_to_indices_map = {}
+        for (apn_idx, match_idx, in_tt, mt_tt) in concurrency_tasks:
+            submitted_task = executor.submit(_ccz_single, in_tt, mt_tt)
+            task_to_indices_map[submitted_task] = (apn_idx, match_idx)
 
-    in_tt = in_apn.get_truth_table().representation.truth_table
+        for completed_task in concurrent.futures.as_completed(task_to_indices_map):
+            apn_idx, match_idx = task_to_indices_map[completed_task]
+            equivalence_found = completed_task.result()
+            ccz_equivalence_results.append((apn_idx, match_idx, equivalence_found))
 
-    removed_count = 0
-    found_equiv_apn = None
+    equivalence_map = defaultdict(list)
+    for (apn_idx, match_idx, eq_bool) in ccz_equivalence_results:
+        equivalence_map[apn_idx].append((match_idx, eq_bool))
 
-    for i, (m_apn, comp_types) in enumerate(matches):
-        matched_tt = m_apn.get_truth_table().representation.truth_table
-        eq = False
-        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_ccz_single, in_tt, matched_tt)
-            eq = future.result()
+    # Track which APNs get removed (found at least one CCZ equivalence),
+    # and which matches to remove if they are not equivalent.
+    removed_apn_indices = set()
+    non_equivalent_matches_map = defaultdict(list)
 
-        if eq:
-            # If found equivalent, the APN is stored in equivalence_list.json
-            # and removed from input_apns. The match is also removed from match_list.
-            _store_equivalence_record(in_apn, m_apn, eq_type="ccz")
-            _remove_apn_from_input_and_matches(in_apn, apn_list, match_list_data)
-            match_list_data.pop(input_apn_index, None)
+    for apn_idx, match_outcomes in equivalence_map.items():
+        # If any match was True => remove that input APN and matches from the file.
+        any_equivalent = [(m_idx, True) for (m_idx, eq_bool) in match_outcomes if eq_bool]
+        if any_equivalent:
+            chosen_match_index = any_equivalent[0][0]
+            input_apn_dict = input_apn_list[apn_idx]
+            matched_apn_dict = input_apn_dict["matches"][chosen_match_index]
+            _store_equivalence_record(input_apn_dict, matched_apn_dict, "ccz")
+            removed_apn_indices.add(apn_idx)
+        else:
+            # If any are False => remove those non-equivalent matches from the input APNs match list.
+            failed_match_indexes = [m_idx for (m_idx, eq_bool) in match_outcomes if not eq_bool]
+            non_equivalent_matches_map[apn_idx].extend(failed_match_indexes)
 
-            removed_count += 1
-            found_equiv_apn = m_apn
-            break
+    # Build the final list excluding removed APNs.
+    filtered_apn_list = []
+    for i, apn_dict in enumerate(input_apn_list):
+        if i not in removed_apn_indices:
+            filtered_apn_list.append(apn_dict)
 
-    save_input_apns(apn_list)
-    save_match_list(match_list_data)
+    # Remove the failed matches from each remaining APN.
+    for i, apn_dict in enumerate(input_apn_list):
+        if i in removed_apn_indices:
+            continue
+        failed_indexes = non_equivalent_matches_map.get(i, [])
+        if failed_indexes:
+            old_matches = apn_dict.get("matches", [])
+            new_matches = [
+                m_dict for idx_m, m_dict in enumerate(old_matches)
+                if idx_m not in failed_indexes
+            ]
+            apn_dict["matches"] = new_matches
 
-    if found_equiv_apn:
+    save_input_apns_and_matches(filtered_apn_list)
+
+    removed_count = len(removed_apn_indices)
+    remain_count = len(filtered_apn_list)
+    if removed_count > 0:
         click.echo(
-            f"APN #{input_apn_index} was CCZ-equivalent with a matched APN.\n"
-            f"Removed from input_apns and recorded in equivalence_list."
+            f"{removed_count} input APNs were CCZ-equivalent with a matched APN.\n"
+            f"Removed from storage/input_apns_and_matches and recorded in equivalence_list."
         )
     else:
-        click.echo("No CCZ equivalence found for that APN index.")
+        click.echo("No CCZ equivalences found for the chosen APNs.")
 
-def _ccz_single(in_tt, matched_tt):
-    ccz_test = CCZEquivalenceTest()
-    apnF = APN.from_representation(TruthTableRepresentation(in_tt), 1, "0")
-    apnG = APN.from_representation(TruthTableRepresentation(matched_tt), 1, "0")
-    return ccz_test.are_equivalent(apnF, apnG)
+    click.echo(
+        f"{remain_count} input APNs (and their matches) remain in storage/input_apns_and_matches.json."
+    )
 
-def _remove_apn_from_input_and_matches(apn, apn_list, match_list_data):
-    if apn in apn_list:
-        apn_list.remove(apn)
 
-    for idx, matches in match_list_data.items():
-        new_matches = []
-        for (m_apn, comp_types) in matches:
-            if m_apn == apn:
-                pass
-            else:
-                new_matches.append((m_apn, comp_types))
-        match_list_data[idx] = new_matches
+def _ccz_single(input_truth_table, match_truth_table):
+    ccz_tester = CCZEquivalenceTest()
+    apn_input = APN.from_representation(
+        TruthTableRepresentation(input_truth_table), 
+        1, 
+        "0"
+    )
+    apn_match = APN.from_representation(
+        TruthTableRepresentation(match_truth_table),
+        1,
+        "0"
+    )
+    return ccz_tester.are_equivalent(apn_input, apn_match)
 
-def _store_equivalence_record(input_apn, matched_apn, eq_type: str):
-    eq_list = load_equivalence_list()
 
-    def apn_to_dict(a):
-        return {
-            "poly": a.representation.univariate_polynomial,
-            "field_n": a.field_n,
-            "irr_poly": a.irr_poly,
-            "properties": a.properties,
-            "invariants": a.invariants
-        }
-
-    record = {
+def _store_equivalence_record(input_apn_dict: Dict[str, Any], matched_apn_dict: Dict[str, Any], eq_type: str):
+    equivalence_list = load_equivalence_list()
+    equivalence_list.append({
         "eq_type": eq_type,
-        "input_apn": apn_to_dict(input_apn),
-        "matched_apn": apn_to_dict(matched_apn)
-    }
-    eq_list.append(record)
-    save_equivalence_list(eq_list)
+        "input_apn": {
+            "poly": input_apn_dict["poly"],
+            "field_n": input_apn_dict["field_n"],
+            "irr_poly": input_apn_dict["irr_poly"],
+            "invariants": input_apn_dict.get("invariants", {})
+        },
+        "matched_apn": {
+            "poly": matched_apn_dict["poly"],
+            "field_n": matched_apn_dict["field_n"],
+            "irr_poly": matched_apn_dict["irr_poly"],
+            "invariants": matched_apn_dict.get("invariants", {})
+        }
+    })
+    save_equivalence_list(equivalence_list)

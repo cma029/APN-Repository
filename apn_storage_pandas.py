@@ -22,7 +22,7 @@ def get_parquet_filename(field_dimension: int) -> str:
     return f"apn_data_{field_dimension}.parquet"
 
 def poly_to_key(polynomial_terms: List[Tuple[int, int]]) -> str:
-    # Converts a polynomial list [(coeff_exp, mon_exp), ...] into a canonical JSON 
+    # Converts a polynomial list [(coeff_exp, mon_exp), ...] into a canonical JSON
     # string for duplicate-checking by sorting the terms.
     sorted_polynomial = sorted(polynomial_terms, key=lambda t: (t[0], t[1]))
     return json.dumps(sorted_polynomial)
@@ -120,6 +120,9 @@ def store_apn_pandas(
     odds_task = None
     odws_task = None
 
+    # If we have not defined is_quadratic_value yet, default to False for the concurrency snippet:
+    is_quadratic_value = apn_object.invariants.get("is_quadratic", False)
+
     # Concurrency with process-based executor.
     with concurrent.futures.ThreadPoolExecutor(max_workers=number_of_workers) as executor:
         gamma_task = executor.submit(_compute_and_store_gamma_rank, apn_object)
@@ -194,7 +197,7 @@ def store_apn_pandas(
 # --------------------------------------------------------------
 
 def load_apn_objects_for_field_pandas(field_dimension: int) -> List[APN]:
-    # Loads all APN entries for field degree n from the Parquet file, reconstructs APN objects, 
+    # Loads all APN entries for field degree n from the Parquet file, reconstructs APN objects,
     # and populates their invariants with ODDS/ODWS data and ranks and more.
     df_loaded = load_apn_df_for_field(field_dimension)
     if df_loaded.empty:
@@ -206,32 +209,48 @@ def load_apn_objects_for_field_pandas(field_dimension: int) -> List[APN]:
 
     for index, row in df_loaded.iterrows():
         try:
+            # Handle "poly" (skip if empty or not valid JSON).
             polynomial_json_string = row["poly"]
-            polynomial_data = json.loads(polynomial_json_string)
+            if not polynomial_json_string or polynomial_json_string.strip() == "":
+                print(f"Error reconstructing APN at index {index}: 'poly' is empty. Skipping row.")
+                continue
+            try:
+                polynomial_data = json.loads(polynomial_json_string)
+            except json.JSONDecodeError:
+                print(f"Error reconstructing APN at index {index}: invalid JSON in 'poly'. Skipping row.")
+                continue
 
-            # Reconstruct APN object
             apn_object = parser.parse_univariate_polynomial(polynomial_data, field_dimension, row["irr_poly"])
-
             if not hasattr(apn_object, "invariants"):
                 apn_object.invariants = {}
 
             odds_column_value = row.get("odds_str", "non-quadratic")
             odws_column_value = row.get("odws_str", "non-quadratic")
 
+            # Try to parse them if they aren't "non-quadratic".
             if pd.notna(odds_column_value) and odds_column_value != "non-quadratic":
-                loaded_odds_dict = json.loads(odds_column_value)
-                loaded_odds_dict = {int(k): int(v) for k, v in loaded_odds_dict.items()}
-                apn_object.invariants["odds"] = loaded_odds_dict
+                try:
+                    loaded_odds_dict = json.loads(odds_column_value)
+                    loaded_odds_dict = {int(k): int(v) for k, v in loaded_odds_dict.items()}
+                    apn_object.invariants["odds"] = loaded_odds_dict
+                except json.JSONDecodeError:
+                    print(f"Warning: 'odds_str' at index {index} not valid JSON. Setting to 'non-quadratic'.")
+                    apn_object.invariants["odds"] = "non-quadratic"
             else:
                 apn_object.invariants["odds"] = "non-quadratic"
 
             if pd.notna(odws_column_value) and odws_column_value != "non-quadratic":
-                loaded_odws_dict = json.loads(odws_column_value)
-                loaded_odws_dict = {int(k): int(v) for k, v in loaded_odws_dict.items()}
-                apn_object.invariants["odws"] = loaded_odws_dict
+                try:
+                    loaded_odws_dict = json.loads(odws_column_value)
+                    loaded_odws_dict = {int(k): int(v) for k, v in loaded_odws_dict.items()}
+                    apn_object.invariants["odws"] = loaded_odws_dict
+                except json.JSONDecodeError:
+                    print(f"Warning: 'odws_str' at index {index} not valid JSON. Setting to 'non-quadratic'.")
+                    apn_object.invariants["odws"] = "non-quadratic"
             else:
                 apn_object.invariants["odws"] = "non-quadratic"
 
+            # Load gamma_rank & delta_rank & citation.
             gamma_rank_value = row["gamma_rank"]
             apn_object.invariants["gamma_rank"] = gamma_rank_value if pd.notna(gamma_rank_value) else None
 
@@ -242,7 +261,9 @@ def load_apn_objects_for_field_pandas(field_dimension: int) -> List[APN]:
             apn_object.invariants["citation"] = citation_value if pd.notna(citation_value) else ""
 
             apn_list.append(apn_object)
+
         except Exception as reconstruct_error:
+            # Catch any unexpected error per row (to avoid crashing the entire load).
             print(f"Error reconstructing APN at index {index}: {reconstruct_error}")
             continue
 

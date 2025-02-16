@@ -74,7 +74,7 @@ def store_apn_pandas(
     irreducible_polynomial: str,
     citation_message: str = "No citation provided."
 ) -> None:
-    
+
     # Initialize PolynomialParser and parse the polynomial into an APN object.
     parser = PolynomialParser()
     try:
@@ -220,14 +220,14 @@ def load_apn_objects_for_field_pandas(field_dimension: int) -> List[APN]:
 
             if pd.notna(odds_column_value) and odds_column_value != "non-quadratic":
                 loaded_odds_dict = json.loads(odds_column_value)
-                loaded_odds_dict = {int(key): value for key, value in loaded_odds_dict.items()}
+                loaded_odds_dict = {int(k): int(v) for k, v in loaded_odds_dict.items()}
                 apn_object.invariants["odds"] = loaded_odds_dict
             else:
                 apn_object.invariants["odds"] = "non-quadratic"
 
             if pd.notna(odws_column_value) and odws_column_value != "non-quadratic":
                 loaded_odws_dict = json.loads(odws_column_value)
-                loaded_odws_dict = {int(key): value for key, value in loaded_odws_dict.items()}
+                loaded_odws_dict = {int(k): int(v) for k, v in loaded_odws_dict.items()}
                 apn_object.invariants["odws"] = loaded_odws_dict
             else:
                 apn_object.invariants["odws"] = "non-quadratic"

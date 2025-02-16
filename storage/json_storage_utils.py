@@ -24,6 +24,13 @@ def load_input_apns_and_matches() -> List[Dict[str, Any]]:
 
     if "input_apns" not in data:
         return []
+
+    # Convert odds and odws dict keys to integer keys after loading.
+    for apn_dict in data["input_apns"]:
+        _unify_integer_keys_odds_odws(apn_dict)
+        for match_dict in apn_dict.get("matches", []):
+            _unify_integer_keys_odds_odws(match_dict)
+
     return data["input_apns"]
 
 def save_input_apns_and_matches(apn_list: List[Dict[str, Any]]) -> None:
@@ -48,3 +55,23 @@ def save_equivalence_list(eq_list: List[Dict[str, Any]]) -> None:
     ensure_storage_folder()
     with open(EQUIVALENCE_LIST_FILE, "w", encoding="utf-8") as f:
         json.dump(eq_list, f, indent=2)
+
+# --------------------------------------------------------------
+# Helper to unify odds and odws dict keys as integers.
+# --------------------------------------------------------------
+def _unify_integer_keys_odds_odws(apn_dict: Dict[str, Any]) -> None:
+    invariants = apn_dict.setdefault("invariants", {})
+
+    # If Ortho-Derivative Differential Spectrum is a dict, cast keys to integers.
+    if "odds" in invariants and isinstance(invariants["odds"], dict):
+        new_odds = {}
+        for k, v in invariants["odds"].items():
+            new_odds[int(k)] = int(v)
+        invariants["odds"] = new_odds
+
+    # If Ortho-Derivative extended Walsh Spectrum is a dict, cast keys to integers.
+    if "odws" in invariants and isinstance(invariants["odws"], dict):
+        new_odws = {}
+        for k, v in invariants["odws"].items():
+            new_odws[int(k)] = int(v)
+        invariants["odws"] = new_odws

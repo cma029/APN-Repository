@@ -66,6 +66,8 @@ def compute_is_apn(apn):
     # apn.invariants['differential_uniformity'] = du
 
 def compute_anf_invariants(apn):
+    # It’s cheaper to compute algebraic_degree, is_monomial, and is_quadratic
+    # in one pass since they all use the same _create_func_ptr_from_apn().
     # When computing the Algebraic Normal Form (ANF), do all three:
     """
       - apn.invariants['algebraic_degree']

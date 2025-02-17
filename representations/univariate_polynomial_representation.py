@@ -17,9 +17,9 @@ class UnivariatePolynomialRepresentation(Representation):
 
     def to_truth_table(self, field_n, irr_poly):
         """
-        Builds a galois.GF(2^field_n) using the user-supplied irr_poly string 
+        Builds a galois.GF(2^field_n) using the user-supplied input irr_poly string 
         e.g. "x^6 + x^4 + x^3 + x + 1". If parse_irreducible_poly_str(...) returns 0,
-        we issue a warning and fall back to Galois' default polynomial for GF(2^n).
+        we issue a warning and fall back to Galois default polynomial for GF(2^n).
         """
 
         # Parse the textual polynomial string => integer bitmask.
@@ -44,14 +44,14 @@ class UnivariatePolynomialRepresentation(Representation):
 
         a = field.primitive_element
 
-        # Convert exponents of a primitive element to field elements for the coefficients
-        # After this conversion, each polynomial term is stored as (field_element, monomial_exponen)
+        # Convert exponents of a primitive element to field elements for the coefficients.
+        # After this conversion, each polynomial term is stored as (field_element, monomial_exponen).
         terms = []
         for (coeff_exp, mon_exp) in self.univariate_polynomial:
             coeff = a ** coeff_exp
             terms.append((coeff, mon_exp))
 
-        # Compute the truth table
+        # Compute the truth table.
         tt = []
         # Iterate over all integers from 0 to 2^n-1.
         for x_int in range(2**field_n):

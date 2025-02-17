@@ -1,11 +1,13 @@
-# univariate_polynomial_representation.py
-
 import galois
 from representations.abstract_representation import Representation
+from apn_invariants import parse_irreducible_poly_str
 
 class UnivariatePolynomialRepresentation(Representation):
-    # APN function represented as a univariate polynomial over GF(2^n).
-    # The univariate polynomial is stored as a list of tuples: (coefficient_exponent, monomial_exponent).
+    """
+    APN function represented as a univariate polynomial over GF(2^n).
+    The univariate polynomial is stored as a list of tuples: (coefficient_exponent, monomial_exponent).
+    Example: [(1,9),(11,6),(0,3)] means a*x^9 + a^11*x^6 + x^3.
+    """
 
     def __init__(self, univariate_polynomial):
         self.univariate_polynomial = univariate_polynomial
@@ -14,14 +16,31 @@ class UnivariatePolynomialRepresentation(Representation):
         return self
 
     def to_truth_table(self, field_n, irr_poly):
-        field = None
-        # Try integer-based irreducible polynomial
-        try:
-            irr_int = int(irr_poly)
-            field = galois.GF(2**field_n, irreducible_poly=irr_int)
-        except ValueError:
-            # If not parseable as integer, just use default or fallback
+        """
+        Builds a galois.GF(2^field_n) using the user-supplied irr_poly string 
+        e.g. "x^6 + x^4 + x^3 + x + 1". If parse_irreducible_poly_str(...) returns 0,
+        we issue a warning and fall back to Galois' default polynomial for GF(2^n).
+        """
+
+        # Parse the textual polynomial string => integer bitmask.
+        irr_int = parse_irreducible_poly_str(irr_poly)
+
+        # If parse returns 0 => Galois' default polynomial (fallback).
+        if irr_int == 0:
+            print(f"Warning: Could not parse '{irr_poly}' as a polynomial string. "
+                  f"Falling back to Galois' default polynomial for GF(2^{field_n}).")
             field = galois.GF(2**field_n)
+        else:
+            # Attempt to use irr_int with Galois. If reducible => Galois fallback.
+            try:
+                field = galois.GF(2**field_n, irreducible_poly=irr_int)
+            except ValueError as exc:
+                if "is reducible" in str(exc):
+                    print(f"Warning: The user-specified polynomial '{irr_poly}' "
+                          f"is not irreducible. Falling back to the default polynomial for GF(2^{field_n}).")
+                    field = galois.GF(2**field_n)
+                else:
+                    raise
 
         a = field.primitive_element
 

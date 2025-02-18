@@ -60,14 +60,16 @@ def compute_is_apn(apn):
 
     func_ptr = _create_func_ptr_from_apn(apn)
     try:
-        is_apn = function_is_apn(func_ptr)
-        # For the Differential Uniformity.
-        # du = function_differential_uniformity(func_ptr)
+        diff_uni = function_differential_uniformity(func_ptr)
     finally:
         destroy_function(func_ptr)
 
-    apn.invariants['is_apn'] = bool(is_apn)
-    # apn.invariants['differential_uniformity'] = du
+    if diff_uni == 2:
+        apn.invariants["is_apn"] = True
+    else:
+        apn.invariants["is_apn"] = False
+        print(f"Warning: Differential Uniformity = {diff_uni}")
+
 
 def compute_anf_invariants(apn):
     # It’s cheaper to compute algebraic_degree, is_monomial, and is_quadratic

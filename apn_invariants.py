@@ -41,6 +41,7 @@ def parse_irreducible_poly_str(poly_str):
                 bitmask |= (1 << k)
     return bitmask
 
+
 def _create_func_ptr_from_apn(apn):
     # Internal helper that return a function pointer (ptr) handle in C++.
     tt = apn._get_truth_table_list()
@@ -54,6 +55,9 @@ def _create_func_ptr_from_apn(apn):
 
 
 def compute_is_apn(apn):
+    if "is_apn" in apn.invariants:
+        return
+
     func_ptr = _create_func_ptr_from_apn(apn)
     try:
         is_apn = function_is_apn(func_ptr)
@@ -74,6 +78,9 @@ def compute_anf_invariants(apn):
       - apn.invariants['is_monomial']
       - apn.invariants['is_quadratic']
     """
+    if all(key in apn.invariants for key in ["algebraic_degree", "is_monomial", "is_quadratic"]):
+        return
+
     func_ptr = _create_func_ptr_from_apn(apn)
     try:
         deg = function_algebraic_degree(func_ptr)
@@ -86,7 +93,11 @@ def compute_anf_invariants(apn):
     apn.invariants['is_monomial'] = bool(monomial_flag)
     apn.invariants['is_quadratic'] = bool(quad_flag)
 
+
 def compute_k_to_1(apn):
+    if "k_to_1" in apn.invariants:
+        return
+
     func_ptr = _create_func_ptr_from_apn(apn)
     try:
         k = function_k_to_1(func_ptr)
@@ -202,7 +213,7 @@ def reorder_invariants(apn):
         if key in old_map:
             new_map[key] = old_map[key]
 
-    # Leftover keys appended.
+    # Append leftover keys at the end.
     for k in old_map:
         if k not in new_map:
             new_map[k] = old_map[k]

@@ -1,7 +1,7 @@
 import os
 import json
-import click
 from typing import List, Dict, Any
+from cli_commands.cli_utils import polynomial_to_str
 
 STORAGE_DIR = "storage"
 INPUT_APNS_AND_MATCHES_FILE = os.path.join(STORAGE_DIR, "input_apns_and_matches.json")
@@ -36,17 +36,28 @@ def load_input_apns_and_matches() -> List[Dict[str, Any]]:
 def save_input_apns_and_matches(apn_list: List[Dict[str, Any]]) -> None:
     # Writes the entire input APN + matches structure to input_apns_and_matches.json.
     ensure_storage_folder()
+
+    # Add "poly_str" (Univariate Polynomial representation) for each APN.
+    for apn_dict in apn_list:
+
+        if isinstance(apn_dict.get("poly"), list):
+            apn_dict["poly_str"] = polynomial_to_str(apn_dict["poly"])
+
+        if "matches" in apn_dict:
+            for match_item in apn_dict["matches"]:
+                if isinstance(match_item.get("poly"), list):
+                    match_item["poly_str"] = polynomial_to_str(match_item["poly"])
+
     data = {"input_apns": apn_list}
+
     with open(INPUT_APNS_AND_MATCHES_FILE, "w", encoding="utf-8") as f:
-        # Store arrays in one line.
-        import json
-        json.dump(data, f, indent=None, separators=(",", ":"))
+        json.dump(data, f, indent=2)
 
 # --------------------------------------------------------------
 # equivalence_list.json
 # --------------------------------------------------------------
 def load_equivalence_list() -> List[Dict[str, Any]]:
-    # Loads the equivalences from equivalence_list.json, 
+    # Loads the equivalences from equivalence_list.json.
     ensure_storage_folder()
     if not os.path.isfile(EQUIVALENCE_LIST_FILE):
         return []

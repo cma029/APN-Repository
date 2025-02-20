@@ -1,6 +1,5 @@
 import click
 import concurrent.futures
-import multiprocessing
 from typing import List, Tuple, Dict, Any
 from storage.json_storage_utils import (
     load_input_apns_and_matches,
@@ -10,11 +9,10 @@ from cli_commands.cli_utils import format_generic_apn
 from apn_invariants import compute_all_invariants
 from apn_object import APN
 
-
 @click.command("compute-match-invariants")
-@click.option("--input-apn-index", default=None, type=int,
+@click.option("--index", "input_apn_index", default=None, type=int,
               help="Index of a single input APN whose matches to process.")
-@click.option("--max-threads", default=None, type=int,
+@click.option("--max-threads", "max_threads", default=None, type=int,
               help="Limit the number of parallel processes used. Default uses all available cores.")
 def compute_match_invariants_cli(input_apn_index, max_threads):
     # Computes all invariants for the match APNs (not their input).
@@ -26,7 +24,6 @@ def compute_match_invariants_cli(input_apn_index, max_threads):
     # Build tasks for concurrency.
     tasks: List[Tuple[int, int, Dict[str, Any]]] = []
     if input_apn_index is not None:
-        # A single input APNs matches.
         if input_apn_index < 0 or input_apn_index >= len(apn_list):
             click.echo("Invalid input APN index.")
             return
@@ -34,10 +31,8 @@ def compute_match_invariants_cli(input_apn_index, max_threads):
         for match_idx, match_dict in enumerate(match_list):
             tasks.append((input_apn_index, match_idx, match_dict))
     else:
-        # All input APNs matches.
         for apn_idx, apn_dict in enumerate(apn_list):
-            match_list = apn_dict.get("matches", [])
-            for match_idx, match_dictionary in enumerate(match_list):
+            for match_idx, match_dictionary in enumerate(apn_dict.get("matches", [])):
                 tasks.append((apn_idx, match_idx, match_dictionary))
 
     if not tasks:
@@ -51,76 +46,61 @@ def compute_match_invariants_cli(input_apn_index, max_threads):
     with concurrent.futures.ProcessPoolExecutor(max_workers=number_of_workers) as executor:
         future_list = [executor.submit(_compute_invariants_for_match_apn, t) for t in tasks]
         for future in concurrent.futures.as_completed(future_list):
-            in_apn_index, match_index, updated_dict, success, error_msg = future.result()
-            if not success:
-                click.echo(error_msg, err=True)
-                updated_dict = None
-            match_results[(in_apn_index, match_index)] = updated_dict
+            returned_apn_index, returned_match_index, updated_match_dict = future.result()
+            match_results[(returned_apn_index, returned_match_index)] = updated_match_dict
 
     # Merge results.
     for (apn_idx, match_idx), updated_match_dict in match_results.items():
-        if updated_match_dict is not None:
-            apn_list[apn_idx]["matches"][match_idx] = updated_match_dict
+        apn_list[apn_idx]["matches"][match_idx] = updated_match_dict
 
     save_input_apns_and_matches(apn_list)
 
     if input_apn_index is not None:
-        # Matches of a single input APN.
         match_list = apn_list[input_apn_index].get("matches", [])
-        click.echo(f"Updated invariants for {len(match_list)} match(es) of INPUT_APN {input_apn_index}.")
-        for match_idx, match_dict in enumerate(match_list):
-            match_apn = APN(
-                match_dict["poly"],
-                match_dict["field_n"],
-                match_dict["irr_poly"]
-            )
-            match_apn.invariants = match_dict["invariants"]
-            label_str = f"Matches for INPUT_APN {input_apn_index}:"
-            click.echo(format_generic_apn(match_apn, label=label_str))
-            click.echo("-" * 60)
+        click.echo(f"Updated invariants for {len(match_list)} matches of APN {input_apn_index}.")
+        for match_dict in match_list:
+            match_apn = _build_apn_from_dict(match_dict)
+            click.echo(format_generic_apn(match_apn, f"Matches for INPUT_APN {input_apn_index}:"))
+            click.echo("-" * 100)
+    else:
+        total = 0
+        for apn_idx, apn_dict in enumerate(apn_list):
+            ms = apn_dict.get("matches", [])
+            total += len(ms)
+            for match_dict in ms:
+                match_apn = _build_apn_from_dict(match_dict)
+                click.echo(format_generic_apn(match_apn, f"Matches for INPUT_APN {apn_idx}:"))
+                click.echo("-" * 100)
+        click.echo(f"Finished computing invariants for {total} matches.")
 
-        click.echo(
-            f"Finished computing all invariants for matches of INPUT_APN {input_apn_index} "
-            f"(and saved updates)."
+
+def _compute_invariants_for_match_apn(task: Tuple[int, int, Dict[str, Any]]):
+    input_apn_index, match_index, match_dictionary = task
+    if "cached_tt" in match_dictionary and match_dictionary["cached_tt"]:
+        match_apn = APN.from_cached_tt(
+            match_dictionary["cached_tt"],
+            match_dictionary["field_n"],
+            match_dictionary["irr_poly"]
         )
     else:
-        # All match APNs.
-        total_matches_updated = 0
-        for idx, apn_dict in enumerate(apn_list):
-            match_list = apn_dict.get("matches", [])
-            if match_list:
-                total_matches_updated += len(match_list)
-                for match_dict in match_list:
-                    match_apn = APN(
-                        match_dict["poly"],
-                        match_dict["field_n"],
-                        match_dict["irr_poly"]
-                    )
-                    match_apn.invariants = match_dict["invariants"]
-                    label_str = f"Matches for INPUT_APN {idx}:"
-                    click.echo(format_generic_apn(match_apn, label=label_str))
-                    click.echo("-" * 60)
-        click.echo(
-            f"Finished computing all invariants for {total_matches_updated} matches among all input APNs "
-            f"(and saved updates)."
-        )
-
-
-def _compute_invariants_for_match_apn(task: Tuple[int, int, Dict[str, Any]]) -> Tuple[int, int, Dict[str, Any], bool, str]:
-    # Concurrency helper for a single match APN.
-    input_apn_index, match_index, match_dictionary = task
-    try:
         match_apn = APN(
             match_dictionary["poly"],
             match_dictionary["field_n"],
             match_dictionary["irr_poly"]
         )
-        match_apn.invariants = match_dictionary.get("invariants", {})
+    match_apn.invariants = match_dictionary.get("invariants", {})
 
-        compute_all_invariants(match_apn)
+    match_apn._get_truth_table_list()
+    compute_all_invariants(match_apn)
+    match_dictionary["invariants"] = match_apn.invariants
 
-        # Update dictionary.
-        match_dictionary["invariants"] = match_apn.invariants
-        return (input_apn_index, match_index, match_dictionary, True, "")
-    except Exception as error:
-        return (input_apn_index, match_index, None, False, f"Error computing invariants (match): {error}")
+    return (input_apn_index, match_index, match_dictionary)
+
+
+def _build_apn_from_dict(dict: Dict[str, Any]) -> APN:
+    if "cached_tt" in dict and dict["cached_tt"]:
+        apn_obj = APN.from_cached_tt(dict["cached_tt"], dict["field_n"], dict["irr_poly"])
+    else:
+        apn_obj = APN(dict["poly"], dict["field_n"], dict["irr_poly"])
+    apn_obj.invariants = dict.get("invariants", {})
+    return apn_obj

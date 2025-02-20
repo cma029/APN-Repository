@@ -64,7 +64,12 @@ def _invariants_str_with_linebreak(invariants: dict) -> str:
 
 def format_generic_apn(apn: APN, label: str) -> str:
     reorder_invariants(apn)
-    poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+
+    # Check if apn.representation has univariate_polynomial.
+    if hasattr(apn.representation, "univariate_polynomial"):
+        poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+    else:
+        poly_str = "Truth Table based APN"
 
     lines = []
     lines.append(f"{label}:")

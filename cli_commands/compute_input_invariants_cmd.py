@@ -1,7 +1,6 @@
 import click
 import concurrent.futures
-import multiprocessing
-from typing import List, Tuple, Dict, Any
+from typing import Tuple, Dict, Any
 from storage.json_storage_utils import (
     load_input_apns_and_matches,
     save_input_apns_and_matches
@@ -12,9 +11,9 @@ from apn_object import APN
 
 
 @click.command("compute-input-invariants")
-@click.option("--input-apn-index", default=None, type=int,
+@click.option("--index", "input_apn_index", default=None, type=int,
               help="Index of a single input APN to process.")
-@click.option("--max-threads", default=None, type=int,
+@click.option("--max-threads", "max_threads", default=None, type=int,
               help="Limit the number of parallel processes used. Default uses all available cores.")
 def compute_input_invariants_cli(input_apn_index, max_threads):
     # Computes all invariants for the input APNs (not their matches).
@@ -25,76 +24,83 @@ def compute_input_invariants_cli(input_apn_index, max_threads):
 
     if input_apn_index is not None:
         if input_apn_index < 0 or input_apn_index >= len(apn_list):
-            click.echo("Invalid input APN index.")
+            click.echo(f"Invalid input APN index: {input_apn_index}.")
             return
         tasks = [(input_apn_index, apn_list[input_apn_index])]
     else:
-        # All input APNs.
-        tasks = [(idx, apn_dict) for idx, apn_dict in enumerate(apn_list)]
+        tasks = [(apn_index, apn_dict) for apn_index, apn_dict in enumerate(apn_list)]
 
-    max_workers = max_threads if max_threads else None
+    max_workers = max_threads or None
     result_map = {}
 
     # Concurrency with process-based executor.
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        future_list = [executor.submit(_compute_invariants_for_input_apn, t) for t in tasks]
-
+        future_list = [executor.submit(_compute_invariants_for_one_apn, task_item) for task_item in tasks]
         for future in concurrent.futures.as_completed(future_list):
-            apn_index, updated_dict, success, error_msg = future.result()
-            if not success:
-                click.echo(error_msg, err=True)
-                updated_dict = None
-            result_map[apn_index] = updated_dict
+            apn_idx, updated_dict = future.result()
+            result_map[apn_idx] = updated_dict
 
     # Merge results.
-    for idx, original_dict in enumerate(apn_list):
-        if idx in result_map and result_map[idx] is not None:
-            apn_list[idx] = result_map[idx]
+    for apn_index, original_dict in enumerate(apn_list):
+        if apn_index in result_map and result_map[apn_index] is not None:
+            apn_list[apn_index] = result_map[apn_index]
 
     save_input_apns_and_matches(apn_list)
 
     if input_apn_index is not None:
-        # A single input APN.
         updated_dict = apn_list[input_apn_index]
-        updated_apn = APN(
-            updated_dict["poly"],
-            updated_dict["field_n"],
-            updated_dict["irr_poly"]
-        )
-        updated_apn.invariants = updated_dict["invariants"]
-        click.echo(format_generic_apn(updated_apn, f"INPUT_APN {input_apn_index}"))
+        show_apn = _build_apn_for_print(updated_dict)
+        click.echo(format_generic_apn(show_apn, f"INPUT_APN {input_apn_index}"))
         click.echo("-" * 100)
-        click.echo(f"Finished computing all invariants for INPUT_APN {input_apn_index} (and saved updates).")
-
+        click.echo(f"Finished computing all invariants for INPUT_APN {input_apn_index}.")
     else:
-        # All input APNs.
-        for idx, apn_dict in enumerate(apn_list):
-            updated_apn = APN(
-                apn_dict["poly"],
-                apn_dict["field_n"],
-                apn_dict["irr_poly"]
-            )
-            updated_apn.invariants = apn_dict["invariants"]
-            click.echo(format_generic_apn(updated_apn, f"INPUT_APN {idx}"))
+        for idx, item in enumerate(apn_list):
+            show_apn = _build_apn_for_print(item)
+            click.echo(format_generic_apn(show_apn, f"INPUT_APN {idx}"))
             click.echo("-" * 100)
-        click.echo("Finished computing all invariants for all input APNs (and saved updates).")
+        click.echo("Finished computing all invariants for all input APNs.")
 
+def _compute_invariants_for_one_apn(task: Tuple[int, Dict[str, Any]]) -> Tuple[int, Dict[str, Any]]:
+    apn_idx, apn_dict = task
 
-def _compute_invariants_for_input_apn(task: Tuple[int, Dict[str, Any]]) -> Tuple[int, Dict[str, Any], bool, str]:
-    # Concurrency helper for a single input APN.
-    apn_index, apn_dictionary = task
-    try:
-        # Convert dict => APN object.
-        input_apn = APN(
-            apn_dictionary["poly"],
-            apn_dictionary["field_n"],
-            apn_dictionary["irr_poly"]
+    # Build polynomial-based if poly != [], if empty, then from_cached_tt.
+    poly_data = apn_dict.get("poly", [])
+    cached_tt = apn_dict.get("cached_tt", [])
+
+    if poly_data:
+        apn_obj = APN(poly_data, apn_dict["field_n"], apn_dict["irr_poly"])
+        if cached_tt:
+            apn_obj._cached_tt_list = cached_tt
+    elif cached_tt:
+        apn_obj = APN.from_cached_tt(
+            cached_tt,
+            apn_dict["field_n"],
+            apn_dict["irr_poly"]
         )
-        input_apn.invariants = apn_dictionary.get("invariants", {})
+    else:
+        apn_obj = APN([], apn_dict["field_n"], apn_dict["irr_poly"])
 
-        compute_all_invariants(input_apn)
+    # Merge existing invariants.
+    apn_obj.invariants = apn_dict.get("invariants", {})
 
-        apn_dictionary["invariants"] = input_apn.invariants
-        return (apn_index, apn_dictionary, True, "")
-    except Exception as error:
-        return (apn_index, None, False, f"Error computing invariants: {error}")
+    compute_all_invariants(apn_obj)
+
+    apn_dict["invariants"] = apn_obj.invariants
+    return (apn_idx, apn_dict)
+
+def _build_apn_for_print(apn_dict: Dict[str, Any]) -> APN:
+    poly_data = apn_dict.get("poly", [])
+    cached_tt = apn_dict.get("cached_tt", [])
+
+    if poly_data:
+        show_apn = APN(poly_data, apn_dict["field_n"], apn_dict["irr_poly"])
+        # Skip re-computing the Truth Table by set _cached_tt_list (if present).
+        if cached_tt:
+            show_apn._cached_tt_list = cached_tt
+    elif cached_tt:
+        show_apn = APN.from_cached_tt(cached_tt, apn_dict["field_n"], apn_dict["irr_poly"])
+    else:
+        show_apn = APN([], apn_dict["field_n"], apn_dict["irr_poly"])
+
+    show_apn.invariants = apn_dict.get("invariants", {})
+    return show_apn

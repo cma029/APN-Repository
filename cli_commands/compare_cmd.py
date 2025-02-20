@@ -1,4 +1,6 @@
 import click
+import concurrent.futures
+from typing import Tuple, List, Dict, Any
 from storage.json_storage_utils import (
     load_input_apns_and_matches,
     save_input_apns_and_matches
@@ -12,8 +14,6 @@ from computations.rank.gamma_rank import GammaRankComputation
 from apn_storage_pandas import load_apn_objects_for_field_pandas
 from apn_invariants import compute_anf_invariants
 from apn_object import APN
-import concurrent.futures
-from typing import List
 
 
 @click.command("compare")
@@ -30,180 +30,214 @@ def compare_apns_cli(field_n, compare_type, max_threads):
         click.echo("No input APNs found. Please run 'add-input' first.")
         return
 
-    database_apns = load_apn_objects_for_field_pandas(field_n)
-    if not database_apns:
+    db_apn_list = load_apn_objects_for_field_pandas(field_n)
+    if not db_apn_list:
         click.echo(f"No APNs found in the DB for GF(2^{field_n}).")
         return
 
     if compare_type == "all":
-        compare_types = ["delta", "gamma", "odds", "odws"]
+        invariants_to_compare = ["odds", "odws", "delta", "gamma"]
     else:
-        compare_types = [compare_type]
+        invariants_to_compare = [compare_type]
 
-    concurrency_tasks = [
-        (idx, apn_dict, database_apns, compare_types)
+    # Concurrency: compute any missing invariants in the input APNs.
+    tasks = [
+        (idx, apn_dict, invariants_to_compare)
         for idx, apn_dict in enumerate(input_apn_list)
     ]
+    max_procs = max_threads or None
 
-    number_of_workers = max_threads if max_threads else None
-    task_to_index_map = {}
-    results = []
+    updated_map: Dict[int, Dict[str,Any]] = {}
 
     # Concurrency with process-based executor.
-    with concurrent.futures.ProcessPoolExecutor(max_workers=number_of_workers) as executor:
-        for task_item in concurrency_tasks:
-            index_in_list = task_item[0]
-            apn_task = executor.submit(_compare_single_apn, task_item)
-            task_to_index_map[apn_task] = index_in_list
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_procs) as executor:
+        future_map = {}
+        for task_tuple in tasks:
+            future_obj = executor.submit(_compute_invariants_for_input_apn, task_tuple)
+            future_map[future_obj] = task_tuple[0]
 
-        for apn_task in concurrent.futures.as_completed(task_to_index_map):
-            index_in_list = task_to_index_map[apn_task]
-            (updated_apn_dictionary, matched_apns) = apn_task.result()
-            results.append((index_in_list, updated_apn_dictionary, matched_apns))
+        for done_fut in concurrent.futures.as_completed(future_map):
+            idx_val = future_map[done_fut]
+            updated_dict = done_fut.result()
+            updated_map[idx_val] = updated_dict
 
-    # Merge the results => store matched_list in input_apn_list[idx]["matches"].
-    for (idx_in_list, updated_apn_dictionary, matched_list) in results:
-        input_apn_list[idx_in_list]["matches"] = matched_list
-        input_apn_list[idx_in_list]["invariants"] = updated_apn_dictionary.get("invariants", {})
+    # Merge concurrency results.
+    for i in range(len(input_apn_list)):
+        if i in updated_map:
+            input_apn_list[i] = updated_map[i]
+
+    # For each input APN => first-time search or narrow the matches.
+    for i, input_apn_data in enumerate(input_apn_list):
+        existing_matches = input_apn_data.get("matches", None)
+        if not existing_matches:
+            # Full database search.
+            fresh_matches = []
+            in_invs = input_apn_data["invariants"]
+            for db_apn_obj in db_apn_list:
+                if _apn_matches(in_invs, db_apn_obj.invariants, invariants_to_compare):
+                    match_dict = {
+                        "poly": db_apn_obj.representation.univariate_polynomial,
+                        "field_n": db_apn_obj.field_n,
+                        "irr_poly": db_apn_obj.irr_poly,
+                        "invariants": db_apn_obj.invariants,
+                        "compare_types": list(invariants_to_compare)
+                    }
+                    fresh_matches.append(match_dict)
+            input_apn_data["matches"] = fresh_matches
+        else:
+            # Narrowing the matches.
+            in_invs = input_apn_data["invariants"]
+            narrowed = []
+            for match_item in existing_matches:
+                db_invs = match_item.get("invariants", {})
+                if _apn_matches(in_invs, db_invs, invariants_to_compare):
+                    old_list = match_item.get("compare_types", [])
+                    union_ = set(old_list).union(set(invariants_to_compare))
+                    match_item["compare_types"] = list(union_)
+                    narrowed.append(match_item)
+            input_apn_data["matches"] = narrowed
 
     save_input_apns_and_matches(input_apn_list)
 
-    for idx, apn_dictionary in enumerate(input_apn_list):
-        current_matches = apn_dictionary.get("matches", [])
-        click.echo(
-            f"For INPUT_APN {idx}, found {len(current_matches)} matches after comparing by '{compare_type}'."
-        )
-
-    click.echo("Finished comparing APNs and stored matches in their 'matches' list.")
+    for idx, item in enumerate(input_apn_list):
+        ccount = len(item.get("matches", []))
+        click.echo(f"For INPUT_APN {idx}, found {ccount} matches after comparing by '{compare_type}'.")
+    click.echo("Done compare.")
 
 
-def _compare_single_apn(task_tuple):
-    (idx_in_list, apn_dictionary, database_apns, compare_types) = task_tuple
+def _compute_invariants_for_input_apn(task_tuple: Tuple[int, Dict[str, Any], List[str]]) -> Dict[str, Any]:
+    # If the input APN is missing 'odds', 'odws', 'delta' or 'gamma' then compute them.
+    idx_val, apn_dictionary, wanted_invariants = task_tuple
 
-    # Build APN object.
-    input_apn_object = APN(
-        apn_dictionary["poly"],
-        apn_dictionary["field_n"],
-        apn_dictionary["irr_poly"]
-    )
-    input_apn_object.invariants = apn_dictionary.get("invariants", {})
+    # Rebuild the APN object
+    poly_data = apn_dictionary.get("poly", [])
+    cached_tt = apn_dictionary.get("cached_tt", [])
+    if poly_data:
+        new_apn = APN(poly_data, apn_dictionary["field_n"], apn_dictionary["irr_poly"])
+        if cached_tt:
+            new_apn._cached_tt_list = cached_tt
+    elif cached_tt:
+        new_apn = APN.from_cached_tt(cached_tt, apn_dictionary["field_n"], apn_dictionary["irr_poly"])
+    else:
+        new_apn = APN([], apn_dictionary["field_n"], apn_dictionary["irr_poly"])
 
-    # Possibly compute needed invariants.
-    _compute_invariants_for_compare(input_apn_object, compare_types)
+    new_apn.invariants = apn_dictionary.get("invariants", {})
 
-    # Compare with the database.
-    matched_list = []
-    for db_apn_object in database_apns:
-        if _apn_matches(input_apn_object, db_apn_object, compare_types):
-            matched_apn_dict = {
-                "poly": db_apn_object.representation.univariate_polynomial,
-                "field_n": db_apn_object.field_n,
-                "irr_poly": db_apn_object.irr_poly,
-                "invariants": db_apn_object.invariants,
-                "compare_types": compare_types
-            }
-            matched_list.append(matched_apn_dict)
+    local_invs = new_apn.invariants
 
-    apn_dictionary["invariants"] = input_apn_object.invariants
-    return (apn_dictionary, matched_list)
+    # Delta rank computation.
+    if "delta" in wanted_invariants and "delta_rank" not in local_invs:
+        delta_comp = DeltaRankComputation()
+        local_invs["delta_rank"] = delta_comp.compute_rank(new_apn)
 
+    # Gamma rank computation.
+    if "gamma" in wanted_invariants and "gamma_rank" not in local_invs:
+        gamma_comp = GammaRankComputation()
+        local_invs["gamma_rank"] = gamma_comp.compute_rank(new_apn)
 
-def _compute_invariants_for_compare(apn_object: APN, compare_types: List[str]):
+    # Ortho-Derivative Differential Spectrum.
+    if "odds" in wanted_invariants and "odds" not in local_invs:
+        if _check_is_quadratic(new_apn):
+            dimension = new_apn.field_n
+            tt_list = new_apn._get_truth_table_list()
+            result_spectrum = vbf_tt_differential_spectrum_python(tt_list, dimension)
+            local_invs["odds"] = {int(key): int(val) for key, val in result_spectrum.items()}
+        else:
+            local_invs["odds"] = "non-quadratic"
+
+    # Ortho-Derivative extended Walsh Spectrum.
+    if "odws" in wanted_invariants and "odws" not in local_invs:
+        if _check_is_quadratic(new_apn):
+            dimension = new_apn.field_n
+            tt_list = new_apn._get_truth_table_list()
+            result_odws = vbf_tt_extended_walsh_spectrum_python(tt_list, dimension)
+            local_invs["odws"] = {int(key): int(val) for key, val in result_odws.items()}
+        else:
+            local_invs["odws"] = "non-quadratic"
+
+    apn_dictionary["invariants"] = new_apn.invariants
+    return apn_dictionary
+
+def _check_is_quadratic(apn_obj: APN) -> bool:
     # If we need 'odds' or 'odws', we need to check is_quadratic first.
-    if any(ct in compare_types for ct in ["odds", "odws"]):
-        _ensure_is_quadratic(apn_object)
+    if "is_quadratic" in apn_obj.invariants:
+        return apn_obj.invariants["is_quadratic"]
+    compute_anf_invariants(apn_obj)
+    return bool(apn_obj.invariants.get("is_quadratic", False)) # False => Fallback.
 
-    if "delta" in compare_types:
-        _compute_delta_rank_direct(apn_object)
-    if "gamma" in compare_types:
-        _compute_gamma_rank_direct(apn_object)
-    if "odds" in compare_types:
-        _compute_odds_direct(apn_object)
-    if "odws" in compare_types:
-        _compute_odws_direct(apn_object)
-
-def _ensure_is_quadratic(apn_object: APN):
-    if "is_quadratic" in apn_object.invariants:
-        return
-    try:
-        compute_anf_invariants(apn_object)
-
-    except Exception:
-        apn_object.invariants["is_quadratic"] = False
-
-
-def _compute_delta_rank_direct(apn_object: APN):
-    if "delta_rank" not in apn_object.invariants:
-        try:
-            delta_comp = DeltaRankComputation()
-            rank_value = delta_comp.compute_rank(apn_object)
-            apn_object.invariants["delta_rank"] = rank_value
-        except Exception as err:
-            print(f"Error computing delta rank: {err}")
-            apn_object.invariants["delta_rank"] = None
-
-
-def _compute_gamma_rank_direct(apn_object: APN):
-    if "gamma_rank" not in apn_object.invariants:
-        try:
-            gamma_comp = GammaRankComputation()
-            rank_value = gamma_comp.compute_rank(apn_object)
-            apn_object.invariants["gamma_rank"] = rank_value
-        except Exception as err:
-            print(f"Error computing gamma rank: {err}")
-            apn_object.invariants["gamma_rank"] = None
-
-
-def _compute_odds_direct(apn_object: APN):
-    if "odds" in apn_object.invariants:
-        return
-    is_quad = apn_object.invariants.get("is_quadratic", False)
-    if is_quad:
-        try:
-            tt_list = apn_object._get_truth_table_list()
-            dimension = apn_object.field_n
-            odds_result = vbf_tt_differential_spectrum_python(tt_list, dimension)
-            apn_object.invariants["odds"] = {int(k): int(v) for k, v in odds_result.items()}
-        except Exception as err:
-            print(f"Error computing the Ortho-Derivative Differential Spectrum: {err}")
-            apn_object.invariants["odds"] = "non-quadratic"
-    else:
-        apn_object.invariants.setdefault("odds", "non-quadratic")
-
-
-def _compute_odws_direct(apn_object: APN):
-    if "odws" in apn_object.invariants:
-        return
-    is_quad = apn_object.invariants.get("is_quadratic", False)
-    if is_quad:
-        try:
-            tt_list = apn_object._get_truth_table_list()
-            dimension = apn_object.field_n
-            odws_result = vbf_tt_extended_walsh_spectrum_python(tt_list, dimension)
-            apn_object.invariants["odws"] = {int(k): int(v) for k, v in odws_result.items()}
-        except Exception as err:
-            print(f"Error computing the Ortho-Derivative extended Walsh Spectrum: {err}")
-            apn_object.invariants["odws"] = "non-quadratic"
-    else:
-        apn_object.invariants.setdefault("odws", "non-quadratic")
-
-
-def _apn_matches(input_apn_object: APN, database_apn_object: APN, compare_types: List[str]) -> bool:
-    # Checks if input APN object matches database APN object on each compare type:
-    input_invs = input_apn_object.invariants
-    db_invs = database_apn_object.invariants
-
-    for comparison_type in compare_types:
-        if comparison_type == "delta":
-            if input_invs.get("delta_rank") != db_invs.get("delta_rank"):
+def _apn_matches(in_invariants: dict, db_invariants: dict, invariants_list: List[str]) -> bool:
+    # Compare the chosen invariants.
+    for inv_type in invariants_list:
+        if inv_type == "delta":
+            if "delta_rank" not in db_invariants:
                 return False
-        elif comparison_type == "gamma":
-            if input_invs.get("gamma_rank") != db_invs.get("gamma_rank"):
+            user_val = _try_int(in_invariants.get("delta_rank"))
+            db_val   = _try_int(db_invariants.get("delta_rank"))
+            if user_val is None or db_val is None or user_val != db_val:
                 return False
-        elif comparison_type == "odds":
-            if input_invs.get("odds") != db_invs.get("odds"):
+
+        elif inv_type == "gamma":
+            if "gamma_rank" not in db_invariants:
                 return False
-        elif comparison_type == "odws":
-            if input_invs.get("odws") != db_invs.get("odws"):
+            user_val = _try_int(in_invariants.get("gamma_rank"))
+            db_val   = _try_int(db_invariants.get("gamma_rank"))
+            if user_val is None or db_val is None or user_val != db_val:
                 return False
+
+        elif inv_type == "odds":
+            if "odds" not in db_invariants:
+                return False
+            if not _compare_spectrum(
+                in_invariants.get("odds","non-quadratic"),
+                db_invariants.get("odds","non-quadratic")
+            ):
+                return False
+
+        elif inv_type == "odws":
+            if "odws" not in db_invariants:
+                return False
+            if not _compare_spectrum(
+                in_invariants.get("odws","non-quadratic"),
+                db_invariants.get("odws","non-quadratic")
+            ):
+                return False
+
     return True
+
+def _try_int(val):
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except:
+        return None
+
+def _compare_spectrum(in_val, db_val) -> bool:
+    if in_val == "non-quadratic" or db_val == "non-quadratic":
+        return (in_val == db_val)
+
+    in_dict = _int_key_dict(in_val)
+    db_dict = _int_key_dict(db_val)
+    return (in_dict == db_dict)
+
+def _int_key_dict(data_candidate):
+    import json
+    if isinstance(data_candidate, dict):
+        result_dict = {}
+        for key, val in data_candidate.items():
+            result_dict[int(key)] = int(val)
+        return result_dict
+    if isinstance(data_candidate, str):
+        if data_candidate == "non-quadratic":
+            return "non-quadratic"
+        try:
+            parsed = json.loads(data_candidate)
+            if isinstance(parsed, dict):
+                final_dict = {}
+                for parsed_key, parsed_val in parsed.items():
+                    final_dict[int(parsed_key)] = int(parsed_val)
+                return final_dict
+            return parsed
+        except:
+            return data_candidate
+    return data_candidate

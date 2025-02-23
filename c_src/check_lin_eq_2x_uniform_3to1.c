@@ -1,703 +1,708 @@
-/* Nikolay Stoyanov Kaleyski https://github.com/nskal/tripeq/blob/main/alg1.c */
+/*****************************************************************************/
+/*  check_lin_eq_2x_uniform_3to1.c                                           */
+/*                                                                           */
+/*  Adapted from the nskal/tripeq repository at:                             */
+/*    https://github.com/nskal/tripeq/tree/main                              */
+/*  Contributors include: Ivana Ivkovic and Nikolay Stoyanov Kaleyski.       */
+/*                                                                           */
+/*  This file extracts the relevant logic from alg1.c to check linear        */
+/*  equivalence for canonical 3-to-1 (triplicate) functions modified         */
+/*  for in memory-based usage instead of reading from files.                 */
+/*                                                                           */
+/*  The main function check_lin_eq_2x_uniform_3to1(...) returns 'True'       */
+/*  if two functions (same dimension) are linearly equivalent and both are   */
+/*  canonical 3-to-1. Otherwise it returns 'False'.                          */
+/*                                                                           */
+/*****************************************************************************/
 
+#include "check_lin_eq_2x_uniform_3to1.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
-typedef unsigned long vbf_tt_entry;
 
+/* -----------------------------------------------------------------------
+   Minimal Finite-Field Routines ( extracted from vbf.c / vbf.h ).
+   ----------------------------------------------------------------------- */
+
+/* Library of primitive polynomials */
+static unsigned long get_primitive_polynomial(size_t dimension) {
+    static unsigned long pps[] = {
+        7UL,       11UL,       19UL,       37UL,       91UL,
+        131UL,     285UL,      529UL,      1135UL,     2053UL,
+        4331UL,    8219UL,     16553UL,    32821UL,    65581UL,
+        131081UL,  267267UL,   524327UL,   1050355UL,  2097253UL,
+        4202337UL, 8388641UL,  16901801UL, 33554757UL, 67126739UL,
+        134223533UL, 268443877UL, 536870917UL, 1073948847UL, 2147483657UL,
+        4295000729UL, 8589950281UL, 17179974135UL, 34359741605UL, 68733788515UL,
+        137438953535UL, 274877925159UL, 549755854565UL, 1099522486571UL, 2199023255561UL,
+        4399239010919UL, 8796093022297UL, 17592203542555UL, 35184373323841UL, 70368755859457UL,
+        140737488355361UL, 281475018792329UL, 562949953422687UL, 1125900847118165UL
+    };
+
+    /* Code only realistically uses 4 <= dimension <= 20 (even). */
+    if(dimension < 2 || dimension > 50) {
+        /* Fallback or error: returns 0 if out of range. */
+        return 0UL;
+    }
+    return pps[dimension - 2];
+}
+
+/*
+ * Finite field multiplication: multiply a, b in GF(2^dimension),
+ * with the primitive polynomial 'pp' (bitmask form).
+ * Source from vbf_tt_ff_multiply in vbf.c
+ */
+static unsigned long ff_multiply(unsigned long a, unsigned long b,
+                                 unsigned long pp, size_t dimension)
+{
+    unsigned long result = 0UL;
+    /* The bit at position (dimension-1) is the cutoff for reduction. */
+    unsigned long cutoff = 1UL << (dimension - 1);
+
+    while(a && b) {
+        if (b & 1UL) { /* if b is odd, add a to the total */
+            result ^= a;
+        }
+        b >>= 1;
+        if (a & cutoff) {
+            a = (a << 1) ^ pp; /* reduce */
+        } else {
+            a <<= 1;
+        }
+    }
+    return result;
+}
+
+/*
+ * pre-generated betas for the triplicate functions from dimension 4 to dimension 20. 
+ * alg1.c uses a small pre-generated array of betas for n in [4..20] (provided n is even, >= 4).
+ */
+static unsigned long get_beta(size_t n) {
+    if(n < 4 || n > 20 || (n % 2)) {
+        fprintf (stderr, "error: Beta is a primitive element of F2^4 in even dimension n: 4 <= n <= 20.\n");
+        return 0UL;
+    }
+    /* Beta array (n=4..20 in steps of 2). */
+    static unsigned long betas[] = {
+       6UL,       /* for n=4  */
+       14UL,      /* for n=6  */
+       214UL,     /* for n=8  */
+       42UL,      /* for n=10 */
+       3363UL,    /* for n=12 */
+       16363UL,   /* for n=14 */
+       44234UL,   /* for n=16 */
+       245434UL,  /* for n=18 */
+       476308UL   /* for n=20 */
+    };
+    size_t index = (n - 4)/2;
+    return betas[index];
+}
+
+/* -----------------------------------------------------------------------
+   Structures from alg1.c: triplicate & linear.
+   ----------------------------------------------------------------------- */
 typedef struct {
-    size_t vbf_tt_dimension;
-    size_t vbf_tt_number_of_entries;
-    vbf_tt_entry *vbf_tt_values;
-} vbf_tt;
-
-static bool equivalent = false;
-
-typedef struct {
-    size_t N;
-    size_t tN;
-    vbf_tt_entry *t;
-    vbf_tt_entry *ol;
+   size_t N;          /* number of elements = 2^n */
+   size_t tN;         /* number of triples => (2^n - 1)/3 */
+   vbf_tt_entry *t;   /* the triplicate table: 4 blocks of size tN / output & 3 preimages */
+   vbf_tt_entry *ol;  /* output lookup: for each possible (nonzero) output, store index+1 */
 } triplicate;
 
 typedef struct {
-    size_t N;
-    vbf_tt_entry *y;
-    vbf_tt_entry *x;
+   size_t N;          /* number of elements = 2^n */
+   vbf_tt_entry *y;   /* x -> y  values: mapping for the linear guess */
+   vbf_tt_entry *x;   /* y -> x  pre-images: inverse mapping for the linear guess */
 } linear;
 
-static bool is_canonical_triplicate_internal(vbf_tt F, triplicate *T);
-static void test_triplicate_linear_equivalence(vbf_tt F, vbf_tt G,
-                                               triplicate Ft, triplicate Gt);
+/* Global (static) used by the search to indicate success. */
+static bool g_equivalent = false;
 
-static void delete_triplicate_from_memory(triplicate T)
-{
-    if(T.t)  free(T.t);
-    if(T.ol) free(T.ol);
-}
-static void delete_linear_from_memory(linear L)
-{
-    if(L.x) free(L.x);
-    if(L.y) free(L.y);
+/* -----------------------------------------------------------------------
+   Utility: free triplicate & linear from memory.
+   ----------------------------------------------------------------------- */
+static void delete_triplicate_from_memory(triplicate T) {
+   free(T.t);
+   free(T.ol);
 }
 
-static void configure(triplicate Ft, triplicate Gt, linear L2,
-                      size_t f, size_t g, unsigned char xymc, unsigned char cfg);
-static void combine(linear L2, vbf_tt_entry *xgs, unsigned char px);
-static size_t generate(vbf_tt F, vbf_tt G,
-                       linear L1, linear L2,
-                       vbf_tt_entry *fgs, vbf_tt_entry *xgs, unsigned char px);
-static bool check(vbf_tt F, vbf_tt G,
-                  triplicate Ft, triplicate Gt,
-                  linear L1, vbf_tt_entry *fgs, size_t a);
-static void guess(vbf_tt F, vbf_tt G, triplicate Ft, triplicate Gt,
+static void delete_linear_from_memory(linear L) {
+   free(L.y);
+   free(L.x);
+}
+
+/* -----------------------------------------------------------------------
+   Check if a vbf_tt is a canonical triplicate (3-to-1) function.
+   ----------------------------------------------------------------------- */
+static bool is_canonical_triplicate_internal(const vbf_tt *F, triplicate *T) {
+   /* Function: check if triplicate and return triplicate representation. */
+   if (F->vbf_tt_dimension < 4 || F->vbf_tt_dimension > 20 || (F->vbf_tt_dimension % 2)) {
+      fprintf(stderr, "error: Triplicate requires even n in [4..20]. Max n=20 implemented.\n");
+      return false;
+   }
+   /* Must have F(0) = 0. */
+   if (F->vbf_tt_values[0] != 0UL) {
+   /* 
+    * Commented out to reduce verbose printout.
+    * fprintf(stderr, "error: F(0) != 0 => Function is not canonical triplicate.\n");
+    */
+      return false;
+   }
+
+   T->N  = F->vbf_tt_number_of_entries;
+   T->tN = (F->vbf_tt_number_of_entries - 1)/3;
+   T->t  = (vbf_tt_entry *) calloc(T->tN * 4, sizeof(vbf_tt_entry));
+   T->ol = (vbf_tt_entry *) calloc(T->N,     sizeof(vbf_tt_entry));
+
+   unsigned long beta_val = get_beta(F->vbf_tt_dimension);
+   if(!beta_val) {
+      fprintf(stderr, "error: Beta invalid for dimension %lu.\n", (unsigned long)F->vbf_tt_dimension);
+      return false;
+   }
+
+   /* We allocate a small array c[] to mark visited elements. */
+   unsigned char *c = (unsigned char *) malloc(T->N * sizeof(unsigned char));
+   memset(c, 1, T->N * sizeof(unsigned char));
+
+   c[0] = 0;  /* We do not re-check 0. */
+   size_t j = 0;
+
+   for(size_t i = 1; i < F->vbf_tt_number_of_entries; i++) {
+      if (c[i] != 0) {
+         if(F->vbf_tt_values[i] == 0) {
+            fprintf(stderr, "error: Not a canonical triplicate. Too many elements map to 0.\n");
+            free(c);
+            return false;
+         }
+         if(T->ol[F->vbf_tt_values[i]] != 0) {
+            fprintf(stderr, "error: Not a canonical triplicate. Too many elements map to same value.\n");
+            free(c);
+            return false;
+         }
+         T->ol[F->vbf_tt_values[i]] = j + 1;
+         T->t[(0 * T->tN) + j] = F->vbf_tt_values[i]; /* the output */
+         T->t[(1 * T->tN) + j] = i;                   /* 1st preimage */
+
+         c[i] = 0;
+
+         /* multiply i by beta in GF(2^n): k = i * beta */
+         unsigned long pp = get_primitive_polynomial(F->vbf_tt_dimension);
+         unsigned long k  = ff_multiply(i, beta_val, pp, F->vbf_tt_dimension);
+
+         if( (F->vbf_tt_values[k] != F->vbf_tt_values[i]) ||
+             (F->vbf_tt_values[k ^ i] != F->vbf_tt_values[i]) ) {
+            fprintf(stderr, "error: Function is not canonical triplicate. Triple not found.\n");
+            free(c);
+            return false;
+         }
+         T->t[(2 * T->tN) + j] = k;
+         c[k] = 0;
+         T->t[(3 * T->tN) + j] = (k ^ i);
+         c[k ^ i] = 0;
+
+         j += 1;
+      }
+   }
+
+   free(c);
+   return true;
+}
+
+/* 
+ * Local prototypes: from alg1.c, all the statics to do the equivalence search.
+ * They rely on a global 'g_equivalent' to store success.
+ */
+static bool check( const vbf_tt F, const vbf_tt G,
+                   const triplicate Ft, const triplicate Gt,
+                   linear L1, vbf_tt_entry *fgs, size_t a );
+
+static void guess(const vbf_tt F, const vbf_tt G,
+                  const triplicate Ft, const triplicate Gt,
                   linear L1, linear L2,
                   vbf_tt_entry *fgs, vbf_tt_entry *xgs,
                   unsigned char px, unsigned char cfg);
-static void assignFunc(vbf_tt F, vbf_tt G,
-                       triplicate Ft, triplicate Gt,
-                       linear L1, linear L2,
-                       size_t f, size_t g,
-                       vbf_tt_entry *fgs, vbf_tt_entry *xgs,
-                       unsigned char xymc, unsigned char px, unsigned char cfg);
 
-static unsigned long prim_poly_table[] = {
-  /* index=0 => unused, index=dim => known primitive polynomial bits */
-  0UL,
-  3UL,      /* dim=1 => x + 1 => 11b=>3 */
-  7UL,      /* dim=2 => x^2 + x +1 =>111b=>7 */
-  13UL,     /* dim=3 => x^3 + x +1 =>1101b=>13 */
-  19UL,     /* dim=4 => x^4 + x +1 =>10011b=>19 */
-  37UL,     /* dim=5 => x^5 + x^2 +1 =>100101b=>37 */
-  67UL,     /* dim=6 => x^6 + x +1 =>1000011b=>67 */
-  131UL,    /* dim=7 => x^7 + x +1 =>10000011b=>131 */
-  285UL,    /* dim=8 => x^8 + x^4 + x^3 + x +1 =>100011101b=>285 */
-  529UL,    /* dim=9 =>  x^9 + x^4 + 1 => 529 */
-  1033UL,   /* dim=10 => x^10 + x^3 + 1 => 1033 */
-  2053UL,   /* dim=11 => x^11 + x^2 + 1 => 2053 */
-  4179UL,   /* dim=12 => x^12 + x^6 + x^4 + x + 1 => 4179 */
-  8219UL,   /* dim=13 => x^13 + x^4 + x^3 + x + 1 => 8219 */
-  17475UL,  /* dim=14 => (one valid choice) => 17475 */
-  32771UL,  /* dim=15 => x^15 + x + 1 => 32771   */
-  69643UL,  /* dim=16 => x^16 + x^12 + x^3 + x + 1 => 69643 */
-  131081UL, /* dim=17 => x^17 + x^3 + 1 => 131081 */
-  262273UL, /* dim=18 => x^18 + x^7 + 1 => 262273 */
-  524389UL, /* dim=19 => x^19 + x^6 + x^5 + x^2 + 1 => 524389 */
-  1048585UL /* dim=20 => x^20 + x^3 + 1 => 1048585 */
-};
+static void assignF( const vbf_tt F, const vbf_tt G,
+                     const triplicate Ft, const triplicate Gt,
+                     linear L1, linear L2,
+                     size_t f, size_t g,
+                     vbf_tt_entry *fgs, vbf_tt_entry *xgs,
+                     unsigned char xymc, unsigned char px, unsigned char cfg);
 
-static unsigned long vbf_tt_get_primitive_polynomial(size_t dimension)
-{
-    if(dimension<1 || dimension>20) return 0UL;
-    return prim_poly_table[dimension];
+/* -----------------------------------------------------------------------
+   Definitions from alg1.c: check, guess, assign, etc.
+   ----------------------------------------------------------------------- */
+
+/* check(...) */
+static bool check(const vbf_tt F, const vbf_tt G, const triplicate Ft, const triplicate Gt,
+                  linear L1, vbf_tt_entry *fgs, size_t a) {
+
+   size_t b = 0, i, j, k, n;
+   vbf_tt_entry f, gv;
+
+   while(fgs[b] != 0) b++;
+   n = b;
+   k = b;
+
+   for(i = a; i < b; i++){
+      for(j = 0; j < i; j++){
+         f  = fgs[i] ^ fgs[j];
+         gv = L1.y[fgs[i]] ^ L1.y[fgs[j]];
+         if ((f==0 && gv!=0) || (gv==0 && f!=0)) return false;
+         if (L1.x[gv]!=0 && L1.x[gv]!=f) return false;
+         if (L1.y[f]!=0 && L1.y[f]!=gv) return false;
+         if (L1.y[f]==0 && f!=0){
+            if(Ft.ol[f]!=0 && Gt.ol[gv]!=0){ /* if both values are present as triplet outputs. */
+               fgs[k] = f;
+               k += 1;
+               L1.y[f] = gv;
+               L1.x[gv] = f;
+
+            } else if (Ft.ol[f]==0 && Gt.ol[gv]==0){ /* if both values are not present in triplet outputs */
+               fgs[k] = f;
+               fgs[F.vbf_tt_number_of_entries + k] = 1; /* we will not derive any info from there, therefore it is ok to set them to assigned */
+               k += 1;
+               L1.y[f] = gv;
+               L1.x[gv] = f;
+
+            } else return false; /* contradiction */
+         }
+      }
+      for(j = b; j < n; j++){
+         f  = fgs[i] ^ fgs[j];
+         gv = L1.y[fgs[i]] ^ L1.y[fgs[j]];
+         if ((f==0 && gv!=0) || (gv==0 && f!=0)) return false;
+         if (L1.x[gv]!=0 && L1.x[gv]!=f) return false;
+         if (L1.y[f]!=0 && L1.y[f]!=gv) return false;
+         if (L1.y[f]==0 && f!=0){
+            if(Ft.ol[f]!=0 && Gt.ol[gv]!=0){
+               fgs[k] = f;
+               k += 1;
+               L1.y[f] = gv;
+               L1.x[gv] = f;
+
+            } else if (Ft.ol[f]==0 && Gt.ol[gv]==0){
+               fgs[k] = f;
+               fgs[F.vbf_tt_number_of_entries + k] = 1;
+               k += 1;
+               L1.y[f] = gv;
+               L1.x[gv] = f;
+
+            } else return false;
+         }
+      }
+      n = k;
+   }
+
+   return true;
 }
 
-static unsigned long vbf_tt_ff_multiply(unsigned long a, unsigned long b,
-                                        unsigned long pp, size_t dimension)
-{
-    unsigned long product=0UL;
-    for(size_t i=0; i< dimension; i++){
-        if(b & 1UL){
-            product ^= a;
-        }
-        b >>= 1UL;
-        unsigned long carry = (a & (1UL<<(dimension-1))) ? 1UL : 0UL;
-        a <<=1UL;
-        if(carry) a ^= pp;
-    }
-    unsigned long mask = ((unsigned long)1UL << dimension) -1UL;
-    return product & mask;
-}
+/* guess(...) */
+static void guess(const vbf_tt F, const vbf_tt G, const triplicate Ft, const triplicate Gt, linear L1, linear L2,
+                  vbf_tt_entry *fgs, vbf_tt_entry *xgs, unsigned char px, unsigned char cfg) {
 
-static const unsigned long betas[] = {
-  /* For dimension=4 =>6, 6=>14, 8=>214, 10=>42,12=>3363,14=>16363,16=>44234,...*/
-  6UL, 14UL, 214UL, 42UL, 3363UL, 16363UL, 44234UL, 245434UL, 476308UL
-};
+   size_t i, pf, n;
+   vbf_tt_entry f, g;
+   vbf_tt_entry *fgss;
+   linear l1, l2;
 
-static bool is_canonical_triplicate_internal(vbf_tt F, triplicate *T)
-{
-    printf("[DEBUG] is_canonical_triplicate_internal: dimension=%zu, #entries=%zu\n",
-           F.vbf_tt_dimension, F.vbf_tt_number_of_entries);
+   l1.N = L1.N;
+   l2.N = L2.N;
+   n = (1<<(2*px)) - 1;
 
-    if(F.vbf_tt_dimension <4 || F.vbf_tt_dimension>20 ||
-       (F.vbf_tt_dimension%2)!=0)
-    {
-        fprintf(stderr,"error: dimension must be even in [4..20], got=%zu\n",
-                F.vbf_tt_dimension);
-        return false;
-    }
+   for(i = 0; i < F.vbf_tt_number_of_entries - 1; i++){
+      if(fgs[F.vbf_tt_number_of_entries + i]==0){
+         pf = i;
+         break;
+      }
+   }
+   if(i == F.vbf_tt_number_of_entries - 1){
+      /* or px == (F.vbf_tt_dimension/2)+1 => any one of these conditions means success. */
+      g_equivalent = true;
+      return;
+   }
 
-    if(F.vbf_tt_values[0] !=0){
-        fprintf(stderr,"error: Not canonical triplicate. F(0)=%lu !=0\n",
-                (unsigned long)F.vbf_tt_values[0]);
-        return false;
-    }
+   if(fgs[pf]!=0){
 
-    T->N  = F.vbf_tt_number_of_entries;
-    T->tN = (F.vbf_tt_number_of_entries -1)/3;
-    T->t  = (vbf_tt_entry*) calloc(T->tN*4, sizeof(vbf_tt_entry));
-    T->ol = (vbf_tt_entry*) calloc(T->N,     sizeof(vbf_tt_entry));
+      f = Ft.ol[fgs[pf]] - 1;
+      g = Gt.ol[L1.y[fgs[pf]]] - 1;
 
-    if(!T->t || !T->ol){
-        fprintf(stderr,"[DEBUG] mem error in is_canonical_triplicate.\n");
-        free(T->t); free(T->ol);
-        return false;
-    }
+      l2.x = (vbf_tt_entry *) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      l2.y = (vbf_tt_entry *) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      fgss  = (vbf_tt_entry *) malloc(2*F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
 
-    size_t idx = (F.vbf_tt_dimension -4)/2;
-    if(idx >= (sizeof(betas)/sizeof(betas[0]))){
-        fprintf(stderr,"[DEBUG] dimension out-of-range for snippet betas: %zu\n",
-                F.vbf_tt_dimension);
-        free(T->t); free(T->ol);
-        return false;
-    }
-    unsigned long beta = betas[idx];
-    printf("[DEBUG] snippetBeta=%lu for dimension=%zu (index=%zu)\n", beta, F.vbf_tt_dimension, idx);
+      for(i=0; i<F.vbf_tt_number_of_entries; i++){
+         l2.x[i]    = L2.x[i];
+         l2.y[i]    = L2.y[i];
+         fgss[i]    = fgs[i];
+         fgss[F.vbf_tt_number_of_entries + i] = fgs[F.vbf_tt_number_of_entries + i];
+      }
+      /* add its L2 values to L2 guesses. */
+      fgss[F.vbf_tt_number_of_entries + pf] = 1;
+      xgs[n]   = Gt.t[1 * Gt.tN + g];
+      xgs[n+1] = Gt.t[2 * Gt.tN + g];
+      xgs[n+2] = Gt.t[3 * Gt.tN + g];
 
-    unsigned long pp = vbf_tt_get_primitive_polynomial(F.vbf_tt_dimension);
-    printf("[DEBUG] prim_poly=0x%lX for dimension=%zu\n", pp, F.vbf_tt_dimension);
+      /* and assign L2 configuration: */
+      assignF(F, G, Ft, Gt, L1, l2, f, g, fgss, xgs, 0, px, cfg);
+      delete_linear_from_memory(l2);
+      free(fgss);
+      return;
+   
+   } else {
+      /* find free values to pair for L1. */
+      f = 0;
+      while(L1.y[Ft.t[f]]!=0 && f<Ft.tN) f+=1;
+      size_t g_ = 0;
+      while(L1.x[Gt.t[g_]]!=0 && g_<Gt.tN) g_+=1;
+      while(g_<Gt.tN) {
+         /* generate a copy of L1 and fgs not to mess 'em up. */
+         l1.x = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+         l1.y = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+         fgss = (vbf_tt_entry*) malloc(2*F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
 
-    unsigned char *c = (unsigned char*) malloc(T->N);
-    memset(c, 1, T->N);
-    c[0] =0;
-
-    size_t j=0;
-    for(unsigned long i=1; i< F.vbf_tt_number_of_entries; i++){
-        if(c[i]!=0){
-            unsigned long Fi = F.vbf_tt_values[i];
-            if(Fi==0){
-                fprintf(stderr,"error: too many map->0. i=%lu\n", (unsigned long)i);
-                free(c);
-                return false;
-            }
-            if(T->ol[Fi]!=0){
-                fprintf(stderr,"error: same output used => i=%lu => F(i)=%lu\n",
-                        i, Fi);
-                free(c);
-                return false;
-            }
-            T->ol[Fi] = j+1;
-            T->t[0*T->tN + j] = Fi;
-            T->t[1*T->tN + j] = i;
-            c[i] =0;
-
-            /* multiply i*beta mod pp => k */
-            unsigned long k = vbf_tt_ff_multiply(i, beta, pp, F.vbf_tt_dimension);
-            if(F.vbf_tt_values[k] != Fi || F.vbf_tt_values[k ^ i]!= Fi){
-                fprintf(stderr,
-                    "error: Not canonical triplicate. triple not found.\n"
-                    "  [debug] i=%lu => F(i)=%lu, k=%lu => F(k)=%lu, F(k^i)=%lu\n",
-                    i, Fi, k, (unsigned long)F.vbf_tt_values[k],
-                    (unsigned long)F.vbf_tt_values[k ^ i]);
-                free(c);
-                return false;
-            }
-            T->t[2*T->tN + j] = k;
-            c[k]=0;
-            T->t[3*T->tN + j] = (k ^ i);
-            c[k ^ i]=0;
-            j++;
-        }
-    }
-    free(c);
-    printf("[DEBUG] is_canonical_triplicate => success with j=%zu.\n", j);
-    return true;
-}
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-bool check_is_canonical_triplicate(vbf_tt *F)
-{
-    printf("[DEBUG] check_is_canonical_triplicate: dimension=%zu\n",
-           F->vbf_tt_dimension);
-
-    printf("[DEBUG] Full TT (length=%zu):", F->vbf_tt_number_of_entries);
-    for (size_t i = 0; i < F->vbf_tt_number_of_entries; i++) {
-        printf(" %lu", (unsigned long)F->vbf_tt_values[i]);
-    }
-    printf("\n");
-
-    triplicate T; 
-    T.t=NULL; 
-    T.ol=NULL;
-
-    bool ok = is_canonical_triplicate_internal(*F, &T);
-    if(T.t || T.ol){
-        delete_triplicate_from_memory(T);
-    }
-    return ok;
-}
-
-#ifdef __cplusplus
-}
-#endif
-
-static void print_linear(linear L)
-{
-    printf("\n[DEBUG] print_linear => dimension N=%zu\n  y=", L.N);
-    for(size_t i=0; i< L.N; i++){
-        printf(" %lu",(unsigned long)L.y[i]);
-    }
-    printf("\n");
-
-    printf("  x=");
-    for(size_t i=0; i< L.N; i++){
-        printf(" %lu",(unsigned long)L.x[i]);
-    }
-    printf("\n");
-}
-
-
-static void test_triplicate_linear_equivalence(vbf_tt F, vbf_tt G,
-                                               triplicate Ft, triplicate Gt)
-{
-    printf("[DEBUG] test_triplicate_linear_equivalence: dim=%zu\n",
-           F.vbf_tt_dimension);
-    equivalent = false;
-
-    linear L1, L2;
-    L1.N = F.vbf_tt_number_of_entries;
-    L2.N = F.vbf_tt_number_of_entries;
-
-    L1.x = (vbf_tt_entry*) calloc(L1.N,sizeof(vbf_tt_entry));
-    L1.y = (vbf_tt_entry*) calloc(L1.N,sizeof(vbf_tt_entry));
-    L2.x = (vbf_tt_entry*) calloc(L2.N,sizeof(vbf_tt_entry));
-    L2.y = (vbf_tt_entry*) calloc(L2.N,sizeof(vbf_tt_entry));
-
-    vbf_tt_entry *fgs = (vbf_tt_entry*) calloc(2*F.vbf_tt_number_of_entries, sizeof(vbf_tt_entry));
-    vbf_tt_entry *xgs = (vbf_tt_entry*) calloc(F.vbf_tt_number_of_entries,   sizeof(vbf_tt_entry));
-
-    size_t f=0, g=0;
-    unsigned char xymc=0, px=0;
-
-    while(g < Gt.tN){
-        L1.y[ Ft.t[f]] = Gt.t[g];
-        L1.x[ Gt.t[g]] = Ft.t[f];
-
-        fgs[0] = Ft.t[f];
-        fgs[F.vbf_tt_number_of_entries] =1; /* mark guess 0 as configured */
-        xgs[0] = Gt.t[1*Gt.tN + g];
-        xgs[1] = Gt.t[2*Gt.tN + g];
-        xgs[2] = Gt.t[3*Gt.tN + g];
-
-        memset(L2.x, 0, L2.N*sizeof(vbf_tt_entry));
-        memset(L2.y, 0, L2.N*sizeof(vbf_tt_entry));
-
-        assignFunc(F, G, Ft, Gt, L1, L2, f, g, fgs, xgs, xymc, px, 1);
-        if(equivalent) break;
-        assignFunc(F, G, Ft, Gt, L1, L2, f, g, fgs, xgs, xymc, px, 2);
-        if(equivalent) break;
-
-        /* revert: */
-        L1.y[ Ft.t[f]] =0;
-        L1.x[ Gt.t[g]] =0;
-        g++;
-    }
-    if(!equivalent){
-        printf("False\n");
-    }
-
-    free(L1.x); free(L1.y);
-    free(L2.x); free(L2.y);
-    free(fgs);
-    free(xgs);
-}
-
-static void assignFunc(vbf_tt F, vbf_tt G,
-                       triplicate Ft, triplicate Gt,
-                       linear L1, linear L2,
-                       size_t f, size_t g,
-                       vbf_tt_entry *fgs, vbf_tt_entry *xgs,
-                       unsigned char xymc, unsigned char px, unsigned char cfg)
-{
-    while(xymc<3){
-        configure(Ft, Gt, L2, f, g, xymc, cfg);
-
-        linear l1, l2_local;
-        l1.N = F.vbf_tt_number_of_entries;
-        l2_local.N = F.vbf_tt_number_of_entries;
-        l1.x = (vbf_tt_entry*) malloc(l1.N*sizeof(vbf_tt_entry));
-        l1.y = (vbf_tt_entry*) malloc(l1.N*sizeof(vbf_tt_entry));
-        l2_local.x = (vbf_tt_entry*) malloc(l2_local.N*sizeof(vbf_tt_entry));
-        l2_local.y = (vbf_tt_entry*) malloc(l2_local.N*sizeof(vbf_tt_entry));
-
-        vbf_tt_entry *fgss = (vbf_tt_entry*) malloc(2*F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
-
-        for(size_t i=0; i< l1.N; i++){
+         for(i=0; i<F.vbf_tt_number_of_entries; i++){
             l1.x[i] = L1.x[i];
             l1.y[i] = L1.y[i];
-            l2_local.x[i] = L2.x[i];
-            l2_local.y[i] = L2.y[i];
             fgss[i] = fgs[i];
             fgss[F.vbf_tt_number_of_entries + i] = fgs[F.vbf_tt_number_of_entries + i];
-        }
+         }
 
-        combine(l2_local, xgs, px);
-        size_t a = generate(F, G, l1, l2_local, fgss, xgs, px);
-        if(a!=0){
-            if(check(F, G, Ft, Gt, l1, fgss, a)){
-                guess(F, G, Ft, Gt, l1, l2_local, fgss, xgs, px+1, cfg);
-                if(equivalent){
-                    delete_linear_from_memory(l1);
-                    delete_linear_from_memory(l2_local);
-                    free(fgss);
-                    return;
-                }
+         /* make a guess; give new assignment to L1. */
+         l1.y[Ft.t[f]] = Gt.t[g_];
+         l1.x[Gt.t[g_]] = Ft.t[f];
+         fgss[pf] = Ft.t[f];
+
+         /* generate its linear combos and check. */
+         if(check(F,G,Ft,Gt,l1,fgss, pf)) {
+
+            fgss[F.vbf_tt_number_of_entries + pf] = 1;
+            l2.x = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+            l2.y = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+            for(i=0; i<F.vbf_tt_number_of_entries; i++){
+               l2.x[i] = L2.x[i];
+               l2.y[i] = L2.y[i];
             }
-        }
-        delete_linear_from_memory(l1);
-        delete_linear_from_memory(l2_local);
-        free(fgss);
+            /* add its L2 values to L2 guesses. */
+            xgs[n]   = Gt.t[1*Gt.tN + g_];
+            xgs[n+1] = Gt.t[2*Gt.tN + g_];
+            xgs[n+2] = Gt.t[3*Gt.tN + g_];
 
-        xymc++;
-    }
+            /* and assign L2 configuration: */
+            assignF(F,G,Ft,Gt,l1,l2,f,g_,fgss,xgs,0,px,cfg);
+            delete_linear_from_memory(l2);
+         }
+
+         delete_linear_from_memory(l1);
+         free(fgss);
+         if(g_equivalent) return;
+         g_++;
+         while(L1.x[Gt.t[g_]]!=0 && g_<Gt.tN) g_++;
+      }
+   }
+   return;
 }
 
-/*********************************************************************************
- * configure(...)
- *********************************************************************************/
-static void configure(triplicate Ft, triplicate Gt, linear L2,
-                      size_t f, size_t g, unsigned char xymc, unsigned char cfg)
-{
-    if(cfg==1){
-        switch(xymc){
-        case 0:
-            L2.y[ Gt.t[1*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
-            L2.x[ Ft.t[1*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
-            L2.y[ Gt.t[2*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
-            L2.x[ Ft.t[2*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
-            L2.y[ Gt.t[3*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
-            L2.x[ Ft.t[3*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
-            break;
-        case 1:
-            L2.y[ Gt.t[1*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
-            L2.x[ Ft.t[2*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
-            L2.y[ Gt.t[2*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
-            L2.x[ Ft.t[3*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
-            L2.y[ Gt.t[3*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
-            L2.x[ Ft.t[1*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
-            break;
-        case 2:
-            L2.y[ Gt.t[1*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
-            L2.x[ Ft.t[3*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
-            L2.y[ Gt.t[2*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
-            L2.x[ Ft.t[1*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
-            L2.y[ Gt.t[3*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
-            L2.x[ Ft.t[2*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
-            break;
-        default:
-            return;
-        }
-    } else {
-        switch(xymc){
-        case 0:
-            L2.y[ Gt.t[1*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
-            L2.x[ Ft.t[2*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
-            L2.y[ Gt.t[2*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
-            L2.x[ Ft.t[1*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
-            L2.y[ Gt.t[3*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
-            L2.x[ Ft.t[3*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
-            break;
-        case 1:
-            L2.y[ Gt.t[1*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
-            L2.x[ Ft.t[3*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
-            L2.y[ Gt.t[2*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
-            L2.x[ Ft.t[2*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
-            L2.y[ Gt.t[3*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
-            L2.x[ Ft.t[1*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
-            break;
-        case 2:
-            L2.y[ Gt.t[1*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
-            L2.x[ Ft.t[1*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
-            L2.y[ Gt.t[2*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
-            L2.x[ Ft.t[3*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
-            L2.y[ Gt.t[3*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
-            L2.x[ Ft.t[2*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
-            break;
-        default:
-            return;
-        }
-    }
+/* combine(...) from alg1.c => "combine" with L2 and xgs. */
+static void combine(linear L2, vbf_tt_entry *xgs, unsigned char px){
+   size_t a,b,i;
+
+   a = (1<<(2*px)) - 1;
+   b = a + 3;
+
+   for(i=0; i<a; i+=3){
+      /* come up with linear combos and add them to Linears and guesses */
+      L2.y[xgs[a]^xgs[i]] = L2.y[xgs[a]] ^ L2.y[xgs[i]];
+      L2.x[L2.y[xgs[a]^xgs[i]]] = xgs[a]^xgs[i];
+      L2.y[xgs[a+1]^xgs[i+1]] = L2.y[xgs[a+1]] ^ L2.y[xgs[i+1]];
+      L2.x[L2.y[xgs[a+1]^xgs[i+1]]] = xgs[a+1]^xgs[i+1];
+      L2.y[xgs[a+2]^xgs[i+2]] = L2.y[xgs[a+2]] ^ L2.y[xgs[i+2]];
+      L2.x[L2.y[xgs[a+2]^xgs[i+2]]] = xgs[a+2]^xgs[i+2];
+
+      L2.y[xgs[a]^xgs[i+1]] = L2.y[xgs[a]] ^ L2.y[xgs[i+1]];
+      L2.x[L2.y[xgs[a]^xgs[i+1]]] = xgs[a]^xgs[i+1];
+      L2.y[xgs[a+1]^xgs[i+2]] = L2.y[xgs[a+1]] ^ L2.y[xgs[i+2]];
+      L2.x[L2.y[xgs[a+1]^xgs[i+2]]] = xgs[a+1]^xgs[i+2];
+      L2.y[xgs[a+2]^xgs[i]] = L2.y[xgs[a+2]] ^ L2.y[xgs[i]];
+      L2.x[L2.y[xgs[a+2]^xgs[i]]] = xgs[a+2]^xgs[i];
+
+      L2.y[xgs[a]^xgs[i+2]] = L2.y[xgs[a]] ^ L2.y[xgs[i+2]];
+      L2.x[L2.y[xgs[a]^xgs[i+2]]] = xgs[a]^xgs[i+2];
+      L2.y[xgs[a+1]^xgs[i]] = L2.y[xgs[a+1]] ^ L2.y[xgs[i]];
+      L2.x[L2.y[xgs[a+1]^xgs[i]]] = xgs[a+1]^xgs[i];
+      L2.y[xgs[a+2]^xgs[i+1]] = L2.y[xgs[a+2]] ^ L2.y[xgs[i+1]];
+      L2.x[L2.y[xgs[a+2]^xgs[i+1]]] = xgs[a+2]^xgs[i+1];
+
+      /* last but not least, add them to guess list as well. */
+      xgs[b+3*i]   = xgs[a]^xgs[i];
+      xgs[b+3*i+1] = xgs[a+1]^xgs[i+1];
+      xgs[b+3*i+2] = xgs[a+2]^xgs[i+2];
+
+      xgs[b+3*i+3] = xgs[a]^xgs[i+1];
+      xgs[b+3*i+4] = xgs[a+1]^xgs[i+2];
+      xgs[b+3*i+5] = xgs[a+2]^xgs[i];
+
+      xgs[b+3*i+6] = xgs[a]^xgs[i+2];
+      xgs[b+3*i+7] = xgs[a+1]^xgs[i];
+      xgs[b+3*i+8] = xgs[a+2]^xgs[i+1];
+
+   }
+   return;
 }
 
-/*********************************************************************************
- * combine(...)
- *********************************************************************************/
-static void combine(linear L2, vbf_tt_entry *xgs, unsigned char px)
-{
-    size_t a = (1<<(2*px)) -1;
-    size_t b = a +3;
-}
+/* generate(...) from alg1.c => linear combos for L1 side from new L2 triplets. */
+static size_t generateF(const vbf_tt F, const vbf_tt G, linear L1, linear L2, vbf_tt_entry *fgs, 
+                        vbf_tt_entry *xgs, unsigned char px) {
 
-static size_t generate(vbf_tt F, vbf_tt G,
-                       linear L1, linear L2,
-                       vbf_tt_entry *fgs, vbf_tt_entry *xgs,
-                       unsigned char px)
-{
-    size_t a = (1<<(2*px)) +2;
-    size_t b = (1<<(2*(px+1))) -1;
-    size_t n=0;
-    while(fgs[n]!=0) n++;
-    size_t j=n;
+   size_t a,b,i,j,k,n;
+   vbf_tt_entry f,g;
 
-    for(size_t i=a; i<b; i+=3){
-        vbf_tt_entry gVal = G.vbf_tt_values[xgs[i]];
-        vbf_tt_entry fVal = F.vbf_tt_values[L2.y[xgs[i]]];
-        if((fVal==0 && gVal!=0)||(gVal==0 && fVal!=0)) return 0;
-        if(L1.x[gVal]!=0 && L1.x[gVal]!=fVal) return 0;
-        if(L1.y[fVal]!=0 && L1.y[fVal]!=gVal) return 0;
-        if(L1.y[fVal]!=0){
-            for(size_t k2=0; k2<n; k2++){
-                if(fgs[k2]==fVal){
-                    fgs[F.vbf_tt_number_of_entries + k2]=1;
-                    break;
-                }
+   a = (1<<(2*px)) + 2;
+   b = (1<<(2*(px+1))) - 1;
+   n = 0;
+   while(fgs[n]!=0) n++;
+   j = n; /* j is a position indicator to return, start of newly added values 
+             (the ones that have not been linearly combined yet). */
+
+   for(i=a; i<b; i+=3){
+      g = G.vbf_tt_values[xgs[i]];
+      f = F.vbf_tt_values[L2.y[xgs[i]]];
+      if((f==0 && g!=0)||(g==0 && f!=0)) return 0; /* redundant condition. */
+      if(L1.x[g]!=0 && L1.x[g]!=f) return 0;
+      if(L1.y[f]!=0 && L1.y[f]!=g) return 0;
+      if(L1.y[f]!=0){
+         for(k=0; k<n; k++){
+            if(fgs[k]==f){
+               fgs[F.vbf_tt_number_of_entries + k] = 1;
+               break;
             }
-        } else {
-            fgs[n]= fVal;
-            fgs[F.vbf_tt_number_of_entries + n]=1;
-            n++;
-            L1.y[fVal]= gVal;
-            L1.x[gVal]= fVal;
-        }
-    }
-    return j;
+         }
+      } else {
+         fgs[n] = f;
+         fgs[F.vbf_tt_number_of_entries + n] = 1;
+         n+=1;
+         L1.y[f] = g;
+         L1.x[g] = f;
+      }
+   }
+
+   return j;
 }
 
-static bool check(vbf_tt F, vbf_tt G,
-                  triplicate Ft, triplicate Gt,
-                  linear L1, vbf_tt_entry *fgs, size_t a)
-{
-    size_t b=0;
-    while(fgs[b]!=0) b++;
-    size_t n=b;
-    size_t k=b;
+/* configure(...) for L2 assignment from alg1.c */
+static void configure(const triplicate Ft, const triplicate Gt, linear L2, size_t f, size_t g,
+                      unsigned char xymc, unsigned char cfg) {
 
-    for(size_t i=a; i<b; i++){
-        for(size_t j=0; j<i; j++){
-            vbf_tt_entry fVal= fgs[i]^ fgs[j];
-            vbf_tt_entry gVal= L1.y[fgs[i]] ^ L1.y[fgs[j]];
-            if((fVal==0 && gVal!=0)||(gVal==0 && fVal!=0)) return false;
-            if(L1.x[gVal]!=0 && L1.x[gVal]!=fVal) return false;
-            if(L1.y[fVal]!=0 && L1.y[fVal]!=gVal) return false;
-            if(L1.y[fVal]==0 && fVal!=0){
-                if(Ft.ol[fVal]!=0 && Gt.ol[gVal]!=0){
-                    fgs[k]= fVal; k++;
-                    L1.y[fVal]= gVal; L1.x[gVal]= fVal;
-                }
-                else if(Ft.ol[fVal]==0 && Gt.ol[gVal]==0){
-                    fgs[k]= fVal;
-                    fgs[F.vbf_tt_number_of_entries + k]=1;
-                    k++;
-                    L1.y[fVal]= gVal; L1.x[gVal]= fVal;
-                }
-                else return false;
-            }
-        }
-        for(size_t jj=b; jj<n; jj++){
-            vbf_tt_entry fVal= fgs[i]^ fgs[jj];
-            vbf_tt_entry gVal= L1.y[fgs[i]] ^ L1.y[fgs[jj]];
-            if((fVal==0 && gVal!=0)||(gVal==0 && fVal!=0)) return false;
-            if(L1.x[gVal]!=0 && L1.x[gVal]!= fVal) return false;
-            if(L1.y[fVal]!=0 && L1.y[fVal]!= gVal) return false;
-            if(L1.y[fVal]==0 && fVal!=0){
-                if(Ft.ol[fVal]!=0 && Gt.ol[gVal]!=0){
-                    fgs[k]= fVal; k++;
-                    L1.y[fVal]= gVal; L1.x[gVal]= fVal;
-                }
-                else if(Ft.ol[fVal]==0 && Gt.ol[gVal]==0){
-                    fgs[k]= fVal;
-                    fgs[F.vbf_tt_number_of_entries + k]=1;
-                    k++;
-                    L1.y[fVal]= gVal; L1.x[gVal]= fVal;
-                }
-                else return false;
-            }
-        }
-        n=k;
-    }
-    return true;
-}
-
-static void guess(vbf_tt F, vbf_tt G,
-                  triplicate Ft, triplicate Gt,
-                  linear L1, linear L2,
-                  vbf_tt_entry *fgs, vbf_tt_entry *xgs,
-                  unsigned char px, unsigned char cfg)
-{
-    size_t pf=0;
-    size_t i, n;
-    n = (1<<(2*px)) -1;
-
-    for(i=0; i< (F.vbf_tt_number_of_entries -1); i++){
-        if(fgs[F.vbf_tt_number_of_entries + i]==0){
-            pf=i; 
+   if(cfg==1){
+      switch(xymc){
+         case 0:
+            L2.y[Gt.t[1*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
+            L2.x[Ft.t[1*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
+            L2.y[Gt.t[2*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
+            L2.x[Ft.t[2*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
+            L2.y[Gt.t[3*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
+            L2.x[Ft.t[3*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
             break;
-        }
-    }
-    if(i==(F.vbf_tt_number_of_entries -1)){
-        equivalent=true;
-        print_linear(L1);
-        print_linear(L2);
-        return;
-    }
+         case 1:
+            L2.y[Gt.t[1*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
+            L2.x[Ft.t[2*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
+            L2.y[Gt.t[2*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
+            L2.x[Ft.t[3*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
+            L2.y[Gt.t[3*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
+            L2.x[Ft.t[1*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
+            break;
+         case 2:
+            L2.y[Gt.t[1*Gt.tN + g]] = Ft.t[3*Ft.tN + f];
+            L2.x[Ft.t[3*Ft.tN + f]] = Gt.t[1*Gt.tN + g];
+            L2.y[Gt.t[2*Gt.tN + g]] = Ft.t[1*Ft.tN + f];
+            L2.x[Ft.t[1*Ft.tN + f]] = Gt.t[2*Gt.tN + g];
+            L2.y[Gt.t[3*Gt.tN + g]] = Ft.t[2*Ft.tN + f];
+            L2.x[Ft.t[2*Ft.tN + f]] = Gt.t[3*Gt.tN + g];
+            break;
+         default: return;
+      }
+   }
+   else {
+      switch(xymc){
+         case 0:
+            L2.y[Gt.t[1*Gt.tN+g]] = Ft.t[2*Ft.tN + f];
+            L2.x[Ft.t[2*Ft.tN + f]] = Gt.t[1*Gt.tN+g];
+            L2.y[Gt.t[2*Gt.tN+g]] = Ft.t[1*Ft.tN + f];
+            L2.x[Ft.t[1*Ft.tN + f]] = Gt.t[2*Gt.tN+g];
+            L2.y[Gt.t[3*Gt.tN+g]] = Ft.t[3*Ft.tN + f];
+            L2.x[Ft.t[3*Ft.tN + f]] = Gt.t[3*Gt.tN+g];
+            break;
+         case 1:
+            L2.y[Gt.t[1*Gt.tN+g]] = Ft.t[3*Ft.tN + f];
+            L2.x[Ft.t[3*Ft.tN + f]] = Gt.t[1*Gt.tN+g];
+            L2.y[Gt.t[2*Gt.tN+g]] = Ft.t[2*Ft.tN + f];
+            L2.x[Ft.t[2*Ft.tN + f]] = Gt.t[2*Gt.tN+g];
+            L2.y[Gt.t[3*Gt.tN+g]] = Ft.t[1*Ft.tN + f];
+            L2.x[Ft.t[1*Ft.tN + f]] = Gt.t[3*Gt.tN+g];
+            break;
+         case 2:
+            L2.y[Gt.t[1*Gt.tN+g]] = Ft.t[1*Ft.tN + f];
+            L2.x[Ft.t[1*Ft.tN + f]] = Gt.t[1*Gt.tN+g];
+            L2.y[Gt.t[2*Gt.tN+g]] = Ft.t[3*Ft.tN + f];
+            L2.x[Ft.t[3*Ft.tN + f]] = Gt.t[2*Gt.tN+g];
+            L2.y[Gt.t[3*Gt.tN+g]] = Ft.t[2*Ft.tN + f];
+            L2.x[Ft.t[2*Ft.tN + f]] = Gt.t[3*Gt.tN+g];
+            break;
+         default: return;
+      }
+   }
+}
 
-    if(fgs[pf]!=0){
-        vbf_tt_entry fVal = Ft.ol[ fgs[pf]] -1;
-        vbf_tt_entry gVal = Gt.ol[ L1.y[fgs[pf]]] -1;
+/* assign(...) from alg1.c: tries xymc in [0..2], config L2, generate, check, guess. */
+static void assignF(const vbf_tt F, const vbf_tt G, const triplicate Ft, const triplicate Gt, linear L1, linear L2, size_t f, size_t g,
+                    vbf_tt_entry *fgs, vbf_tt_entry *xgs, unsigned char xymc, unsigned char px, unsigned char cfg) {
 
-        linear l2_local;
-        l2_local.N = F.vbf_tt_number_of_entries;
-        l2_local.x= (vbf_tt_entry*) malloc(l2_local.N*sizeof(vbf_tt_entry));
-        l2_local.y= (vbf_tt_entry*) malloc(l2_local.N*sizeof(vbf_tt_entry));
-        vbf_tt_entry *fgss= (vbf_tt_entry*) malloc(2*F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+   while(xymc < 3) {
+      configure(Ft, Gt, L2, f, g, xymc, cfg); /* choose the assignemnt of xy map out of three possible. */
 
-        for(i=0; i< l2_local.N; i++){
-            l2_local.x[i] = L2.x[i];
-            l2_local.y[i] = L2.y[i];
-            fgss[i] = fgs[i];
-            fgss[F.vbf_tt_number_of_entries + i] = fgs[F.vbf_tt_number_of_entries + i];
-        }
-        fgss[F.vbf_tt_number_of_entries + pf] =1;
-        xgs[n]   = Gt.t[1*Gt.tN + gVal];
-        xgs[n+1] = Gt.t[2*Gt.tN + gVal];
-        xgs[n+2] = Gt.t[3*Gt.tN + gVal];
+      /* give a copy of L2 to the functions that will change it. */
+      linear l1, l2;
+      l1.x = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      l1.y = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      l1.N = F.vbf_tt_number_of_entries;
+      l2.x = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      l2.y = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      l2.N = F.vbf_tt_number_of_entries;
 
-        assignFunc(F, G, Ft, Gt, L1, l2_local, fVal, gVal, fgss, xgs, 0, px, cfg);
-        delete_linear_from_memory(l2_local);
-        free(fgss);
-        if(equivalent) return;
-    } else {
-        vbf_tt_entry fVal=0, gVal=0;
-        while(L1.y[ Ft.t[fVal]]!=0 && fVal< Ft.tN) fVal++;
-        while(L1.x[ Gt.t[gVal]]!=0 && gVal< Gt.tN) gVal++;
-        while(gVal< Gt.tN){
-            linear l1;
-            l1.N= F.vbf_tt_number_of_entries;
-            l1.x= (vbf_tt_entry*) malloc(l1.N*sizeof(vbf_tt_entry));
-            l1.y= (vbf_tt_entry*) malloc(l1.N*sizeof(vbf_tt_entry));
-            vbf_tt_entry *fgss= (vbf_tt_entry*) malloc(2*F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      /* copy of f guesses since we need those clean every time to know how many new asssignments has been made. */
+      vbf_tt_entry *fgss = (vbf_tt_entry*) malloc(2*F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
 
-            for(i=0; i< l1.N; i++){
-                l1.x[i] = L1.x[i];
-                l1.y[i] = L1.y[i];
-                fgss[i] = fgs[i];
-                fgss[F.vbf_tt_number_of_entries + i] = fgs[F.vbf_tt_number_of_entries + i];
+      for(size_t i=0; i<F.vbf_tt_number_of_entries; i++){
+         l1.x[i] = L1.x[i];
+         l1.y[i] = L1.y[i];
+         l2.x[i] = L2.x[i];
+         l2.y[i] = L2.y[i];
+         fgss[i]  = fgs[i];
+         fgss[F.vbf_tt_number_of_entries + i] = fgs[F.vbf_tt_number_of_entries + i];
+      }
+
+      combine(l2, xgs, px); /* linearly combine L2 values to get new calculated triplets. */
+      size_t a = generateF(F,G,l1,l2,fgss,xgs,px); /* generate L1 values from new L2 triplets. */
+      if(a != 0) {
+         if(check(F,G,Ft,Gt,l1,fgss,a)) { /* linearly combine new values in L1 and check for contradiction. */
+            guess(F,G,Ft,Gt,l1,l2,fgss,xgs,px+1,cfg); /* if all is good, proceed to the next unasigned guess of L1. */
+            if(g_equivalent) {
+               free(fgss);
+               free(l1.x); free(l1.y);
+               free(l2.x); free(l2.y);
+               return;
             }
-            l1.y[ Ft.t[fVal]] = Gt.t[gVal];
-            l1.x[ Gt.t[gVal]] = Ft.t[fVal];
-            fgss[pf] = Ft.t[fVal];
+         }
+      }
+      free(fgss);
+      free(l1.x); free(l1.y);
+      free(l2.x); free(l2.y);
 
-            if(check(F,G, Ft,Gt, l1, fgss, pf)){
-                fgss[F.vbf_tt_number_of_entries + pf] =1;
-                linear l2_local;
-                l2_local.N = F.vbf_tt_number_of_entries;
-                l2_local.x = (vbf_tt_entry*) malloc(l2_local.N*sizeof(vbf_tt_entry));
-                l2_local.y = (vbf_tt_entry*) malloc(l2_local.N*sizeof(vbf_tt_entry));
-                for(size_t z=0; z< l2_local.N; z++){
-                    l2_local.x[z] = L2.x[z];
-                    l2_local.y[z] = L2.y[z];
-                }
-                xgs[n]   = Gt.t[1*Gt.tN + gVal];
-                xgs[n+1] = Gt.t[2*Gt.tN + gVal];
-                xgs[n+2] = Gt.t[3*Gt.tN + gVal];
-
-                assignFunc(F,G, Ft,Gt, l1, l2_local, fVal, gVal, fgss, xgs, 0, px, cfg);
-                delete_linear_from_memory(l2_local);
-            }
-            delete_linear_from_memory(l1);
-            free(fgss);
-            if(equivalent) return;
-            gVal++;
-            while(L1.x[ Gt.t[gVal]]!=0 && gVal<Gt.tN) gVal++;
-        }
-    }
+      xymc += 1;
+   }
+   return;
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* test_triplicate_linear_equivalence(...) from alg1.c, but returning void => sets g_equivalent. */
+static void test_triplicate_linear_equivalence(const vbf_tt F, const vbf_tt G, const triplicate Ft, const triplicate Gt) {
 
-bool run_alg1_equivalence_test(size_t dimF, const unsigned long *ttF,
-                               size_t dimG, const unsigned long *ttG)
-{
-    printf("[DEBUG] run_alg1_equivalence_test: dimF=%zu, dimG=%zu\n", dimF, dimG);
+   linear L1, L2;
 
-    if(dimF != dimG){
-        fprintf(stderr,"[DEBUG] dimension mismatch => false.\n");
-        return false;
-    }
+   L1.N = F.vbf_tt_number_of_entries;
+   L2.N = F.vbf_tt_number_of_entries;
 
-    size_t nF = (size_t)1 << dimF;
-    size_t nG = (size_t)1 << dimG;
+   L1.x = (vbf_tt_entry*) calloc(F.vbf_tt_number_of_entries, sizeof(vbf_tt_entry));
+   L1.y = (vbf_tt_entry*) calloc(F.vbf_tt_number_of_entries, sizeof(vbf_tt_entry));
+   L2.x = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+   L2.y = (vbf_tt_entry*) malloc(F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
 
-    vbf_tt F;
-    F.vbf_tt_dimension = dimF;
-    F.vbf_tt_number_of_entries = nF;
-    F.vbf_tt_values = (vbf_tt_entry*) malloc(nF*sizeof(vbf_tt_entry));
-    if(!F.vbf_tt_values){
-        fprintf(stderr,"Memory error F.\n");
-        return false;
-    }
-    for(size_t i=0; i<nF; i++){
-        F.vbf_tt_values[i] = ttF[i];
-    }
+   memset(L2.x,0,F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+   memset(L2.y,0,F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
 
-    printf("[DEBUG] TT of F (dim=%zu, length=%zu):", F.vbf_tt_dimension, nF);
-    for (size_t i = 0; i < nF; i++) {
-        printf(" %lu", (unsigned long)F.vbf_tt_values[i]);
-    }
-    printf("\n");
+   size_t f = 0, g_ = 0; /* position tracker in Ft/Gt triplicate for L1 guesses L1(Ft(f)) = Gt(g). */
+   unsigned char px=0, xymc=0; /* pointer to x guesses and x to y map configuration for the L2 guesses. */
 
-    vbf_tt G;
-    G.vbf_tt_dimension = dimG;
-    G.vbf_tt_number_of_entries = nG;
-    G.vbf_tt_values = (vbf_tt_entry*) malloc(nG*sizeof(vbf_tt_entry));
-    if(!G.vbf_tt_values){
-        free(F.vbf_tt_values);
-        fprintf(stderr,"Memory error G.\n");
-        return false;
-    }
-    for(size_t i=0; i<nG; i++){
-        G.vbf_tt_values[i] = ttG[i];
-    }
+   /* f guess sequence to remember f guesses and speed up linear combos. */
+   vbf_tt_entry *fgs = (vbf_tt_entry*) calloc(2*F.vbf_tt_number_of_entries, sizeof(vbf_tt_entry));
+   /* x guess sequence to remember x guesses and speed up linear combos. */
+   vbf_tt_entry *xgs = (vbf_tt_entry*) calloc(F.vbf_tt_number_of_entries, sizeof(vbf_tt_entry));
 
-    printf("[DEBUG] TT of G (dim=%zu, length=%zu):", G.vbf_tt_dimension, nG);
-    for (size_t i = 0; i < nG; i++) {
-        printf(" %lu", (unsigned long)G.vbf_tt_values[i]);
-    }
-    printf("\n");
-    
-    triplicate Ft; Ft.t=NULL; Ft.ol=NULL;
-    triplicate Gt; Gt.t=NULL; Gt.ol=NULL;
-    equivalent = false;
+   /* Outer loop from alg1.c: root guess of L1(Ft(0)) = Gt(0..?). */
+   while(g_ < Gt.tN) {
+      /* make the first guess for L1: */
+      L1.y[Ft.t[f]] = Gt.t[g_];
+      L1.x[Gt.t[g_]] = Ft.t[f];
+      /* remember the guess in sequences: */
+      fgs[0] = Ft.t[f];
+      fgs[F.vbf_tt_number_of_entries] = 1; /* mark the guess 0 as configured (L2 derived). */
+      xgs[0] = Gt.t[1*Gt.tN + g_];
+      xgs[1] = Gt.t[2*Gt.tN + g_];
+      xgs[2] = Gt.t[3*Gt.tN + g_];
+      /* clean L2 for use: */
+      memset(L2.x,0,F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      memset(L2.y,0,F.vbf_tt_number_of_entries*sizeof(vbf_tt_entry));
+      /* and guess L2 configuration: */
+      assignF(F, G, Ft, Gt, L1, L2, f, g_, fgs, xgs, xymc, px, 1); /* first configuration set. */
+      if(g_equivalent) break;
+      assignF(F, G, Ft, Gt, L1, L2, f, g_, fgs, xgs, xymc, px, 2); /* second configuration set. */
+      if(g_equivalent) break;
+      /* clean up after processed guess. */
+      L1.y[Ft.t[f]] = 0;
+      L1.x[Gt.t[g_]] = 0;
+      /* move sideways, pick another g to pair with L1(F(1)). */
+      g_++;
+   }
 
-    bool okF = is_canonical_triplicate_internal(F, &Ft);
-    bool okG = is_canonical_triplicate_internal(G, &Gt);
-
-    if(!okF || !okG){
-        fprintf(stderr,"error: Function is not canonical triplicate. Triple not found.\n");
-        delete_triplicate_from_memory(Ft);
-        delete_triplicate_from_memory(Gt);
-        free(F.vbf_tt_values);
-        free(G.vbf_tt_values);
-        return false;
-    }
-
-    test_triplicate_linear_equivalence(F, G, Ft, Gt);
-    bool ret = equivalent;
-
-    delete_triplicate_from_memory(Ft);
-    delete_triplicate_from_memory(Gt);
-    free(F.vbf_tt_values);
-    free(G.vbf_tt_values);
-    return ret;
+   free(fgs);
+   free(xgs);
+   delete_linear_from_memory(L1);
+   delete_linear_from_memory(L2);
 }
 
-#ifdef __cplusplus
+/* -----------------------------------------------------------------------
+   Public functions as declared in the .h
+   ----------------------------------------------------------------------- */
+
+bool is_canonical_triplicate_c(vbf_tt *F) {
+   if(!F || F->vbf_tt_number_of_entries == 0) {
+      return false;
+   }
+   triplicate T;
+   bool result = is_canonical_triplicate_internal(F, &T);
+   if(result) {
+      /* Freed if success or fail. */
+      delete_triplicate_from_memory(T);
+   }
+   return result;
 }
-#endif
+
+bool check_lin_eq_2x_uniform_3to1(vbf_tt *F, vbf_tt *G) {
+   /* Must have same dimension and be canonical triplicates. */
+   if(!F || !G) {
+      return false;
+   }
+   if(F->vbf_tt_dimension != G->vbf_tt_dimension) {
+      fprintf(stderr, "error: Functions must have the same dimension => not equivalent.\n");
+      return false;
+   }
+
+   triplicate Ft, Gt;
+   if(!is_canonical_triplicate_internal(F,&Ft)) {
+      delete_triplicate_from_memory(Ft);
+      return false;
+   }
+   if(!is_canonical_triplicate_internal(G,&Gt)) {
+      delete_triplicate_from_memory(Ft);
+      delete_triplicate_from_memory(Gt);
+      return false;
+   }
+
+   g_equivalent = false; /* reset global. */
+   test_triplicate_linear_equivalence(*F, *G, Ft, Gt);
+
+   delete_triplicate_from_memory(Ft);
+   delete_triplicate_from_memory(Gt);
+
+   return g_equivalent;
+}

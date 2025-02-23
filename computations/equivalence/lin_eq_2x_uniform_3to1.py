@@ -1,86 +1,113 @@
-# lin_eq_2x_uniform_3to1.py
-# Description: linear equivalence test for testing two uniform 3-to-1 APNs.
-
+import ctypes
 import os
 import sys
-import ctypes
-from ctypes import c_size_t, c_ulong, c_bool, POINTER, byref
-from typing import List
 from computations.equivalence.base_equivalence import EquivalenceTest
 
-# Determine the library name based on platform
-if sys.platform.startswith("win"):
-    lib_name = "check_lin_eq_2x_uniform_3to1.dll"
-elif sys.platform.startswith("darwin"):
-    lib_name = "libcheck_lin_eq_2x_uniform_3to1.dylib"
-else:
-    lib_name = "libcheck_lin_eq_2x_uniform_3to1.so"
 
-# Build the full path to the native library
+# ----------------------------------------------------------------------------
+# Determine platform-specific library name for the compiled code.
+# ----------------------------------------------------------------------------
+if sys.platform.startswith("win"):
+    LIB_NAME = "check_lin_eq_2x_uniform_3to1.dll"
+elif sys.platform.startswith("darwin"):
+    LIB_NAME = "libcheck_lin_eq_2x_uniform_3to1.dylib"
+else:
+    LIB_NAME = "libcheck_lin_eq_2x_uniform_3to1.so"
+
+
 this_dir = os.path.dirname(os.path.abspath(__file__))
-lib_path = os.path.join(this_dir, "..", "..", "c_src", lib_name)
+lib_path = os.path.join(this_dir, "..", "..", "c_src", LIB_NAME)
 lib_path = os.path.abspath(lib_path)
 
-# Load the library via ctypes
-clib = ctypes.CDLL(lib_path)
+_check_lib = ctypes.CDLL(lib_path)
 
-# Define the C structure matching the snippet
+
+c_uint8 = ctypes.c_uint8
+c_ulong = ctypes.c_ulong
+
+# ----------------------------------------------------------------------------
+# Define vbf_tt structure in Python (matching check_lin_eq_2x_uniform_3to1.h).
+# ----------------------------------------------------------------------------
 class VbfTt(ctypes.Structure):
     _fields_ = [
-        ("vbf_tt_dimension", c_size_t),
-        ("vbf_tt_number_of_entries", c_size_t),
-        ("vbf_tt_values", POINTER(c_ulong)),
+        ("vbf_tt_dimension", ctypes.c_size_t),
+        ("vbf_tt_number_of_entries", ctypes.c_size_t),
+        ("vbf_tt_values", ctypes.POINTER(c_ulong)),
     ]
 
-# is_canonical_triplicate_c
-clib.check_is_canonical_triplicate.argtypes = [ctypes.POINTER(VbfTt)]
-clib.check_is_canonical_triplicate.restype  = c_bool
+# ----------------------------------------------------------------------------
+# Expose the relevant C functions for in-memory usage.
+# ----------------------------------------------------------------------------
 
-# check_lin_eq_2x_uniform_3to1
-clib.run_alg1_equivalence_test.argtypes = [ctypes.POINTER(VbfTt), ctypes.POINTER(VbfTt)]
-clib.run_alg1_equivalence_test.restype  = c_bool
+# Bool is_canonical_triplicate_c(vbf_tt *F);
+_check_lib.is_canonical_triplicate_c.argtypes = [ctypes.POINTER(VbfTt)]
+_check_lib.is_canonical_triplicate_c.restype  = ctypes.c_bool
 
-# --------------------------------------------------------------
-# Internal helper to create the C structure from a Python list
-# --------------------------------------------------------------
-def _create_vbf_tt(tt_values: List[int], dimension: int):
-    num_entries = 1 << dimension
-    if len(tt_values) != num_entries:
-        raise ValueError(f"TT length {len(tt_values)} != 2^{dimension}")
+# Bool check_lin_eq_2x_uniform_3to1(vbf_tt *F, vbf_tt *G);
+_check_lib.check_lin_eq_2x_uniform_3to1.argtypes = [ctypes.POINTER(VbfTt),
+                                                    ctypes.POINTER(VbfTt)]
+_check_lib.check_lin_eq_2x_uniform_3to1.restype  = ctypes.c_bool
 
-    ArrayType = c_ulong * num_entries
-    backing_array = ArrayType(*tt_values)
+# ----------------------------------------------------------------------------
+# Helper for building a VbfTt from a Python list.
+# ----------------------------------------------------------------------------
+def _create_vbf_tt_from_list(tt_values, dimension):
+    length = (1 << dimension)
+    if len(tt_values) != length:
+        raise ValueError(f"Expected {length} values, got {len(tt_values)}.")
 
-    vbf_struct = VbfTt()
-    vbf_struct.vbf_tt_dimension = dimension
-    vbf_struct.vbf_tt_number_of_entries = num_entries
-    vbf_struct.vbf_tt_values = ctypes.cast(backing_array, POINTER(c_ulong))
-    return vbf_struct, backing_array
+    arr_type = c_ulong * length
+    c_array = arr_type(*tt_values)
 
-def is_canonical_triplicate_python(tt_values: List[int], dimension: int) -> bool:
-    # Returns True iff the function with LUT=tt_values is canonical 3-to-1.
-    vbf, arr = _create_vbf_tt(tt_values, dimension)
-    result = clib.check_is_canonical_triplicate(byref(vbf))
-    return bool(result)
+    vbf = VbfTt()
+    vbf.vbf_tt_dimension = dimension
+    vbf.vbf_tt_number_of_entries = length
+    vbf.vbf_tt_values = ctypes.cast(c_array, ctypes.POINTER(c_ulong))
 
-def check_lin_eq_2x_uniform_3to1_python(F_tt: List[int], F_dim: int, G_tt: List[int], G_dim: int) -> bool:
-    # Returns True iff F and G are linearly equivalent canonical 3-to-1.
-    vbfF, arrF = _create_vbf_tt(F_tt, F_dim)
-    vbfG, arrG = _create_vbf_tt(G_tt, G_dim)
-    result = clib.run_alg1_equivalence_test(byref(vbfF), byref(vbfG))
-    return bool(result)
+    return vbf, c_array  # Keep c_array in scope.
 
-def check_2x_uniform_3to1_equivalence_python(ttF, nF, ttG, nG):
-    return check_lin_eq_2x_uniform_3to1_python(ttF, nF, ttG, nG)
 
+def is_canonical_triplicate_py(tt_values, dimension):
+    vbf, _arr = _create_vbf_tt_from_list(tt_values, dimension)
+    return bool(_check_lib.is_canonical_triplicate_c(ctypes.byref(vbf)))
+
+
+def check_lin_equivalence_3to1_py(F_values, G_values, dimension):
+    if len(F_values) != len(G_values):
+        raise ValueError("F and G must have the same size (same dimension).")
+    if (1 << dimension) != len(F_values):
+        raise ValueError("Dimension mismatch with length(F_values).")
+
+    vbfF, arrF = _create_vbf_tt_from_list(F_values, dimension)
+    vbfG, arrG = _create_vbf_tt_from_list(G_values, dimension)
+
+    # The check_lin_eq_2x_uniform_3to1 function expects both to be canonical triplicates.
+    return bool(_check_lib.check_lin_eq_2x_uniform_3to1(ctypes.byref(vbfF), ctypes.byref(vbfG)))
+
+
+# ----------------------------------------------------------------------------
+# The Uniform3to1EquivalenceTest class (base_equivalence.py).
+# ----------------------------------------------------------------------------
 class Uniform3to1EquivalenceTest(EquivalenceTest):
-    """
-    Linear equivalence test for testing two uniform 3-to-1 APNs.
-    """
-
     def are_equivalent(self, apnF, apnG):
+        """
+        Return True if both apnF and apnG are canonical triplicate (3-to-1),
+        and are linearly equivalent. Return False otherwise.
+        """
+        # Check if dimension match.
         if apnF.field_n != apnG.field_n:
-            pass
-        f_tt = apnF._get_truth_table_list()
-        g_tt = apnG._get_truth_table_list()
-        return check_2x_uniform_3to1_equivalence_python(f_tt, apnF.field_n, g_tt, apnG.field_n)
+            return False
+
+        dim = apnF.field_n
+        # Get the Truth Table.
+        F_tt = apnF._get_truth_table_list()
+        G_tt = apnG._get_truth_table_list()
+
+        # Check if both are canonical triplicate (3-to-1).
+        if not is_canonical_triplicate_py(F_tt, dim):
+            return False
+        if not is_canonical_triplicate_py(G_tt, dim):
+            return False
+
+        # If both are canonical triplicate, check for linear equivalence using memory.
+        return check_lin_equivalence_3to1_py(F_tt, G_tt, dim)

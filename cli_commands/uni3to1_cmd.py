@@ -52,7 +52,7 @@ def uni3to1_equivalence_cli(input_apn_index, max_threads, check):
     save_input_apns_and_matches(input_apn_list)
 
     # Build concurrency tasks only for input/matches with invariants["uni3to1"]==True.
-    tasks = []
+    concurrency_tasks = []
     for offset_index, apn_dict in enumerate(chosen_apns):
         apn_index = chosen_indices[offset_index]
 
@@ -68,7 +68,7 @@ def uni3to1_equivalence_cli(input_apn_index, max_threads, check):
             continue
 
         match_list = apn_dict.get("matches", [])
-        for match_idx, match_dict in enumerate(match_list):
+        for match_index, match_dict in enumerate(match_list):
             mt_apn_obj = APN(
                 match_dict["poly"],
                 match_dict["field_n"],
@@ -82,67 +82,68 @@ def uni3to1_equivalence_cli(input_apn_index, max_threads, check):
             if in_apn_obj.field_n != mt_apn_obj.field_n:
                 continue
 
-            tasks.append((apn_index, match_idx, in_apn_obj, mt_apn_obj))
+            concurrency_tasks.append((apn_index, match_index, in_apn_obj, mt_apn_obj))
 
-    if not tasks:
+    if not concurrency_tasks:
         click.echo("No matches found to test for uniformly distributed 3-to-1 equivalence.")
         return
 
     test_equiv = Uniform3to1EquivalenceTest()
-    results = []
-    max_procs = max_threads or None
+    uni3to1_equivalence_results = []
+    max_workers = max_threads or None
 
     # Concurrency with process-based executor.
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_procs) as executor:
-        fut_map = {}
-        for (apn_idx, mt_idx, in_apn, mt_apn) in tasks:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        task_to_indices_map = {}
+        for (apn_idx, match_idx, in_apn, mt_apn) in concurrency_tasks:
             fut = executor.submit(_equiv_worker, test_equiv, in_apn, mt_apn)
-            fut_map[fut] = (apn_idx, mt_idx)
+            task_to_indices_map[fut] = (apn_idx, match_idx)
 
-        for done_fut in concurrent.futures.as_completed(fut_map):
-            (the_apn_idx, the_match_idx) = fut_map[done_fut]
-            eq_bool_or_none = done_fut.result()
-            results.append((the_apn_idx, the_match_idx, eq_bool_or_none))
+        for completed_task in concurrent.futures.as_completed(task_to_indices_map):
+            (the_apn_idx, the_match_idx) = task_to_indices_map[completed_task]
+            equivalence_val = completed_task.result()  # True / False / 'None'.
+            uni3to1_equivalence_results.append((the_apn_idx, the_match_idx, equivalence_val))
 
-    eq_map = defaultdict(list)
-    for (apn_i, match_i, eqval) in results:
-        eq_map[apn_i].append((match_i, eqval))
+    equivalence_map = defaultdict(list)
+    for (apn_i, match_i, eq_val) in uni3to1_equivalence_results:
+        equivalence_map[apn_i].append((match_i, eq_val))
 
-    removed_indices = set()
-    fail_map = defaultdict(list)
+    removed_apn_indices = set()
+    non_equivalent_matches_map = defaultdict(list)
 
-    for the_apn_index, pair_list in eq_map.items():
-        found_true = [(m_idx, True) for (m_idx, val) in pair_list if val is True]
-        if found_true:
-            chosen_m = found_true[0][0]
+    for the_apn_index, pair_list in equivalence_map.items():
+        any_equivalent = [(m_idx, True) for (m_idx, val) in pair_list if val is True]
+        if any_equivalent:
+            chosen_m = any_equivalent[0][0]
             input_apn_dict = input_apn_list[the_apn_index]
             matched_dict = input_apn_dict["matches"][chosen_m]
             _store_equivalence_record(input_apn_dict, matched_dict, "uni3to1")
-            removed_indices.add(the_apn_index)
+            removed_apn_indices.add(the_apn_index)
         else:
-            fails = [m_idx for (m_idx, val) in pair_list if val is False]
-            fail_map[the_apn_index].extend(fails)
+            failed_match_indexes = [m_idx for (m_idx, val) in pair_list if val is False]
+            non_equivalent_matches_map[the_apn_index].extend(failed_match_indexes)
 
-    final_list = []
-    for i, a_dict in enumerate(input_apn_list):
-        if i not in removed_indices:
-            final_list.append(a_dict)
+    # Build final list excluding removed APNs.
+    filtered_apn_list = []
+    for i, apn_dict in enumerate(input_apn_list):
+        if i not in removed_apn_indices:
+            filtered_apn_list.append(apn_dict)
 
-    for i, a_dict in enumerate(input_apn_list):
-        if i in removed_indices:
+    for i, apn_dict in enumerate(input_apn_list):
+        if i in removed_apn_indices:
             continue
-        failing_idxs = fail_map.get(i, [])
-        if failing_idxs:
-            old_matches = a_dict.get("matches", [])
+        fails = non_equivalent_matches_map.get(i, [])
+        if fails:
+            old_matches = apn_dict.get("matches", [])
             new_matches = [
                 m_item for idx_m, m_item in enumerate(old_matches)
-                if idx_m not in failing_idxs
+                if idx_m not in fails
             ]
-            a_dict["matches"] = new_matches
+            apn_dict["matches"] = new_matches
 
-    save_input_apns_and_matches(final_list)
-    removed_count = len(removed_indices)
-    remain_count = len(final_list)
+    save_input_apns_and_matches(filtered_apn_list)
+    removed_count = len(removed_apn_indices)
+    remain_count = len(filtered_apn_list)
 
     if removed_count > 0:
         click.echo(

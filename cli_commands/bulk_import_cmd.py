@@ -10,8 +10,12 @@ from cli_commands.add_input_cmd import add_input_cli
 @click.option("--irr-poly", default=None, type=str,
               help="If provided, sets the irreducible polynomial for all APNs in the file.")
 def bulk_import_cli(file_path, irr_poly):
-    file_path_obj = Path(file_path)
-    all_lines = file_path_obj.read_text().splitlines()
+    """
+    Reads dimension from the first line of the file, then each subsequent line is a univariate polynomial
+    that can include alpha powers 'g^k' and monomial powers 'x^m'. Example: g^32*x^96 + g^7*x^80 + ...
+    """
+    file_path_object = Path(file_path)
+    all_lines = file_path_object.read_text().splitlines()
     if not all_lines:
         click.echo("The file is empty.")
         return
@@ -41,7 +45,7 @@ def bulk_import_cli(file_path, irr_poly):
         return
 
     runner = CliRunner()
-    # Always provide the dimension.
+    # Always provide the field n dimension.
     invoke_args = ["--field-n", str(dimension)]
     # Only pass --irr-poly if the user supplied it.
     if irr_poly and irr_poly.strip():
@@ -57,6 +61,10 @@ def bulk_import_cli(file_path, irr_poly):
 
 
 def _parse_line_to_univ_list_literal(line: str) -> str:
+    """    
+    The polynomials are parsed into a string that is a Python literal for a list-of-tuples
+    like "[(32,96),(7,80),...]", and each list is fed to 'add-input' as a --poly argument.
+    """
     terms = [t.strip() for t in line.split('+')]
     tuple_list = []
 
@@ -69,6 +77,7 @@ def _parse_line_to_univ_list_literal(line: str) -> str:
 
 
 def _parse_single_term(term: str):
+    # Parse a single term like 'g^32*x^96'. Return (coefficient_exp, monomial_exp) as integers.
     term = term.strip().lower()
     if term == '1':
         return (0, 0)
@@ -86,11 +95,11 @@ def _parse_single_term(term: str):
         # No '*'. So either purely coefficient or purely monomial.
         # e.g. 'g^32' => (32, 0), or 'x^66' => (0,66).
         if term.startswith('g'):
-            # parse coefficient, mon_exp=0
+            # Parse coefficient, mon_exp=0.
             coeff_exp = _parse_coefficient(term)
             return (coeff_exp, 0)
         else:
-            # parse monomial, coeff_exp=0
+            # Parse monomial, coeff_exp=0.
             mon_exp = _parse_monomial(term)
             return (0, mon_exp)
 
@@ -116,6 +125,4 @@ def _parse_monomial(segment: str) -> int:
         if not exponent_str.isdigit():
             raise ValueError(f"Unrecognized monomial '{segment}'. Expected 'x^<int>'.")
         return int(exponent_str)
-
-    # Possibly user typed just 'x^0'? We'll handle that above
     raise ValueError(f"Unrecognized monomial '{segment}'. Expected 'x' or 'x^<int>'.")

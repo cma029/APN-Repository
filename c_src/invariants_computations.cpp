@@ -168,28 +168,60 @@ function_differential_uniformity(function_t fh)
 }
 
 // -----------------------------------------------------------------------------
-// Compute the k-to-1.
+// Compute the k-to-1 (inspired by the frequency-counting logic used in libapn).
 // -----------------------------------------------------------------------------
 static int compute_k_to_1(const Function& F)
 {
-    if (F.n == 0) return -1;
+    if (F.n == 0) {
+        // Edge case: only 1 possible input => output is LUT[0].
+        // If LUT[0] == 0, we have 0->0 => that is trivially 1-to-1, so return 1.
+        // Otherwise, if LUT[0] != 0, that breaks the “only 0 -> 0” assumption.
+        if (F.LUT[0] == 0)
+            return 1;
+        else
+            return -1;
+    }
+
     unsigned int sz = 1U << F.n;
     const auto& LUT = F.LUT;
 
+    // Count frequencies.
     std::vector<unsigned int> freq(sz, 0);
     for (unsigned int x = 0; x < sz; x++) {
-        freq[LUT[x]]++;
-    }
-    unsigned int k = 0;
-    for (auto c : freq) {
-        if (c == 0) continue;
-        if (k == 0) {
-            k = c;
-        } else if (c != k) {
+        unsigned int outv = LUT[x];
+        if (outv >= sz) {
+            // Out of range. Can’t be valid under GF(2^n).
             return -1;
         }
+        freq[outv]++;
     }
-    return (int)k;
+
+    // Enforce “0 -> 0” => freq[0] == 1.
+    if (freq[0] != 1) {
+        return -1;
+    }
+
+    // Find k among nonzero outputs.
+    int k = -1;
+    for (unsigned int v = 1; v < sz; v++) {
+        if (freq[v] > 0) {
+            k = (int)freq[v];
+            break;
+        }
+    }
+    if (k < 0) {
+        // k < 0 means no nonzero output and everything mapped to 0.
+        return -1;
+    }
+
+    // Check that all nonzero outputs have the same frequency k.
+    for (unsigned int v = 1; v < sz; v++) {
+        if (freq[v] != 0 && (int)freq[v] != k) {
+            return -1; // Mismatch => not k-to-1.
+        }
+    }
+
+    return k;
 }
 
 extern "C" int

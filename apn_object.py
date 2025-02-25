@@ -60,6 +60,10 @@ class APN:
             tt_repr = self.representation.to_truth_table(self.field_n, self.irr_poly)
             self._cached_tt_list = tt_repr.truth_table
 
+            # If fallback to Galois occurred, update self.irr_poly to the actual polynomial used.
+            if hasattr(self.representation, "_last_used_irr_poly_str") and self.representation._last_used_irr_poly_str:
+                self.irr_poly = self.representation._last_used_irr_poly_str
+
         return self._cached_tt_list
 
     def __repr__(self):

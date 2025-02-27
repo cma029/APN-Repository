@@ -9,7 +9,9 @@ from cli_commands.add_input_cmd import add_input_cli
               help="Path to the bulk import file. First line is dimension, then one polynomial per line.")
 @click.option("--irr-poly", default=None, type=str,
               help="If provided, sets the irreducible polynomial for all APNs in the file.")
-def bulk_import_cli(file_path, irr_poly):
+@click.option("--citation-all", default=None, type=str,
+              help="If provided, all APNs get the same citation string, ignoring bracketed citations.")
+def bulk_import_cli(file_path, irr_poly, citation_all):
     """
     Reads dimension from the first line of the file, then each subsequent line is a univariate polynomial
     that can include alpha powers 'g^k' and monomial powers 'x^m' plus an optional [citation] string.
@@ -37,15 +39,20 @@ def bulk_import_cli(file_path, irr_poly):
         if not line:
             continue
 
-        poly_part, citation_part = _extract_citation(line)
+        if citation_all:
+            poly_part = line.split('[', 1)[0].strip()
+            citation_part = citation_all.strip()
+        else:
+            poly_part, citation_part = _extract_citation(line)
 
         try:
             poly_list_literal = _parse_line_to_univ_list_literal(poly_part)
-            polynomials_str_list.append(poly_list_literal)
-            citations_str_list.append(citation_part)  # Append even if empty to keep alignment.
         except ValueError as err:
             click.echo(f"Error on line {line_no}: {err}")
             return
+
+        polynomials_str_list.append(poly_list_literal)
+        citations_str_list.append(citation_part)
 
     if not polynomials_str_list:
         click.echo("No polynomial lines found after the first line (dimension).")
@@ -54,7 +61,7 @@ def bulk_import_cli(file_path, irr_poly):
     runner = CliRunner()
     # Always provide the field n dimension.
     invoke_args = ["--field-n", str(dimension)]
-    # Only pass --irr-poly if the user supplied it.
+    # Only pass --irr-poly if provided.
     if irr_poly and irr_poly.strip():
         invoke_args.extend(["--irr-poly", irr_poly.strip()])
 
@@ -75,12 +82,12 @@ def _extract_citation(line: str):
     start_idx = line.rfind('[')
     end_idx   = line.rfind(']')
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        citation_part = line[start_idx+1:end_idx].strip()
-        poly_part = line[:start_idx].strip()
-        return (poly_part, citation_part)
+        citation_str = line[start_idx+1:end_idx].strip()
+        poly_part    = line[:start_idx].strip()
+        return (poly_part, citation_str)
     else:
         # No bracket means no citation.
-        return (line, citation_part)
+        return (line, "")
 
 
 def _parse_line_to_univ_list_literal(line: str) -> str:
@@ -112,7 +119,7 @@ def _parse_single_term(term: str):
             raise ValueError(f"Unrecognized polynomial term '{term}'. Expected 2 parts separated by '*'.")
         left_segment, right_segment = parts
         coeff_exp = _parse_coefficient(left_segment)
-        mon_exp = _parse_monomial(right_segment)
+        mon_exp   = _parse_monomial(right_segment)
         return (coeff_exp, mon_exp)
     else:
         # No '*'. So either purely coefficient or purely monomial.

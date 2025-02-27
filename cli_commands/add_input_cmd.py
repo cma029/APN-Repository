@@ -23,7 +23,8 @@ from apn_invariants import compute_is_apn
               help="Irreducible polynomial string, e.g. 'x^6 + x^4 + x^3 + x + 1'")
 @click.option("--max-threads", default=None, type=int,
               help="Limit the number of parallel processes used. Default uses all available cores.")
-def add_input_cli(poly, poly_file, field_n, irr_poly, max_threads):
+@click.option("--citation", multiple=True, help="Citation string (optional).")
+def add_input_cli(poly, poly_file, field_n, irr_poly, max_threads, citation):
     # Adds user-specified univariate polynomial or .tt files to input_apns_and_matches.json.
     parser = PolynomialParser()
 
@@ -116,7 +117,11 @@ def add_input_cli(poly, poly_file, field_n, irr_poly, max_threads):
         return
 
     new_entries = []
-    for final_apn_obj in final_added_apns:
+    # Attach optional citation[i] to final_apn_obj.invariants["citation"].
+    for i, final_apn_obj in enumerate(final_added_apns):
+        if i < len(citation):
+            final_apn_obj.invariants["citation"] = citation[i]
+
         if hasattr(final_apn_obj.representation, "univariate_polynomial"):
             stored_poly = final_apn_obj.representation.univariate_polynomial
         else:

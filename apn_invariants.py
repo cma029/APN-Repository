@@ -91,7 +91,7 @@ def compute_k_to_1(apn):
     finally:
         destroy_function(func_ptr)
     if k_value == -1:
-        apn.invariants["k_to_1"] = "not uniform"
+        apn.invariants["k_to_1"] = ""
     else:
         apn.invariants["k_to_1"] = f"{k_value}-to-1"
 

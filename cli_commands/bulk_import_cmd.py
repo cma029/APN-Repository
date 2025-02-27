@@ -12,7 +12,8 @@ from cli_commands.add_input_cmd import add_input_cli
 def bulk_import_cli(file_path, irr_poly):
     """
     Reads dimension from the first line of the file, then each subsequent line is a univariate polynomial
-    that can include alpha powers 'g^k' and monomial powers 'x^m'. Example: g^32*x^96 + g^7*x^80 + ...
+    that can include alpha powers 'g^k' and monomial powers 'x^m' plus an optional [citation] string.
+    Example line: g^15*x^48 + g^16*x^33 + g^16*x^18 + x^17 + x^3 [L. Budaghyan, C. Carlet & G. Leander (2009)]
     """
     file_path_object = Path(file_path)
     all_lines = file_path_object.read_text().splitlines()
@@ -27,15 +28,21 @@ def bulk_import_cli(file_path, irr_poly):
         click.echo("First line of file must be an integer dimension (e.g. '8').")
         return
 
-    # Collect polynomials from subsequent lines.
+    # Collect polynomials and citations from subsequent lines.
     polynomials_str_list = []
+    citations_str_list   = []
+
     for line_no, line in enumerate(all_lines[1:], start=2):
         line = line.strip().rstrip(',')
         if not line:
             continue
+
+        poly_part, citation_part = _extract_citation(line)
+
         try:
-            poly_list_literal = _parse_line_to_univ_list_literal(line)
+            poly_list_literal = _parse_line_to_univ_list_literal(poly_part)
             polynomials_str_list.append(poly_list_literal)
+            citations_str_list.append(citation_part)  # Append even if empty to keep alignment.
         except ValueError as err:
             click.echo(f"Error on line {line_no}: {err}")
             return
@@ -51,13 +58,29 @@ def bulk_import_cli(file_path, irr_poly):
     if irr_poly and irr_poly.strip():
         invoke_args.extend(["--irr-poly", irr_poly.strip()])
 
-    # Add each polynomial.
-    for poly_literal in polynomials_str_list:
+    # Add each polynomial plus its citation.
+    for poly_literal, cit_string in zip(polynomials_str_list, citations_str_list):
         invoke_args.extend(["--poly", poly_literal])
+        if cit_string:
+            invoke_args.extend(["--citation", cit_string])
 
     # Call add_input_cmd in-process.
     result = runner.invoke(add_input_cli, invoke_args)
     click.echo(result.output)
+
+
+def _extract_citation(line: str):
+    citation_part = ""
+    # Find the last '[' and closing ']' if present.
+    start_idx = line.rfind('[')
+    end_idx   = line.rfind(']')
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        citation_part = line[start_idx+1:end_idx].strip()
+        poly_part = line[:start_idx].strip()
+        return (poly_part, citation_part)
+    else:
+        # No bracket means no citation.
+        return (line, citation_part)
 
 
 def _parse_line_to_univ_list_literal(line: str) -> str:

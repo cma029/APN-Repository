@@ -52,6 +52,8 @@ def save_input_apns_and_matches(apn_list: List[Dict[str, Any]]) -> None:
 
     with open(INPUT_APNS_AND_MATCHES_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+        # Store arrays in one line (horizontally).
+        # json.dump(data, f, indent=None, separators=(",", ":"))
 
 # --------------------------------------------------------------
 # equivalence_list.json

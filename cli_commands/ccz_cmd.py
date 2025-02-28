@@ -70,7 +70,7 @@ def ccz_equivalence_cli(input_apn_index, max_threads):
 
     # Run concurrency for CCZ checks.
     ccz_equivalence_results = []
-    max_workers = max_threads or None  # <--- RENAMED to max_workers
+    max_workers = max_threads or None
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         task_to_indices_map = {}
         for (apn_idx, match_idx, in_tt, mt_tt) in concurrency_tasks:

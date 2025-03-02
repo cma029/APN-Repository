@@ -49,7 +49,10 @@ def ccz_equivalence_cli(input_apn_index, max_threads):
             input_apn_dict["irr_poly"]
         )
         input_apn_object.invariants = input_apn_dict.get("invariants", {})
-        input_truth_table = input_apn_object.get_truth_table().representation.truth_table
+        in_tt_repr = input_apn_object.get_truth_table()
+        input_truth_table = in_tt_repr.truth_table
+        input_field_n = input_apn_object.field_n
+        input_irr_poly = input_apn_object.irr_poly
 
         # Build tasks for each match in this APNs matches list.
         match_list = input_apn_dict.get("matches", [])
@@ -60,9 +63,16 @@ def ccz_equivalence_cli(input_apn_index, max_threads):
                 match_dict["irr_poly"]
             )
             match_apn_object.invariants = match_dict.get("invariants", {})
-            match_truth_table = match_apn_object.get_truth_table().representation.truth_table
+            mt_tt_repr = match_apn_object.get_truth_table()
+            match_truth_table = mt_tt_repr.truth_table
+            match_field_n = match_apn_object.field_n
+            match_irr_poly = match_apn_object.irr_poly
 
-            concurrency_tasks.append((apn_index, match_index, input_truth_table, match_truth_table))
+            if input_field_n != match_field_n:
+                continue
+
+            concurrency_tasks.append((apn_index, match_index, input_truth_table, input_field_n,
+                input_irr_poly, match_truth_table, match_field_n, match_irr_poly))
 
     if not concurrency_tasks:
         click.echo("No matches to test for CCZ equivalence.")
@@ -73,13 +83,13 @@ def ccz_equivalence_cli(input_apn_index, max_threads):
     max_workers = max_threads or None
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         task_to_indices_map = {}
-        for (apn_idx, match_idx, in_tt, mt_tt) in concurrency_tasks:
-            submitted_task = executor.submit(_ccz_single, in_tt, mt_tt)
+        for (apn_idx, match_idx, in_tt, in_dim, in_poly, mt_tt, mt_dim, mt_poly) in concurrency_tasks:
+            submitted_task = executor.submit(_ccz_single, in_tt, in_dim, in_poly, mt_tt, mt_dim, mt_poly)
             task_to_indices_map[submitted_task] = (apn_idx, match_idx)
 
         for completed_task in concurrent.futures.as_completed(task_to_indices_map):
             (apn_idx, match_idx) = task_to_indices_map[completed_task]
-            equivalence_found = completed_task.result()  # True / False / 'None'.
+            equivalence_found = completed_task.result()  # True / False / None.
             ccz_equivalence_results.append((apn_idx, match_idx, equivalence_found))
 
     # Organize the results by input APN index.
@@ -141,7 +151,8 @@ def ccz_equivalence_cli(input_apn_index, max_threads):
     )
 
 
-def _ccz_single(input_truth_table, match_truth_table):
+def _ccz_single(input_truth_table, input_dimension, input_irr_poly, 
+                match_truth_table, match_dimension, match_irr_poly):
     """
     Concurrency worker returns:
        True => equal.
@@ -151,15 +162,9 @@ def _ccz_single(input_truth_table, match_truth_table):
     ccz_tester = CCZEquivalenceTest()
     try:
         apn_input = APN.from_representation(
-            TruthTableRepresentation(input_truth_table),
-            1,
-            "0"
-        )
+            TruthTableRepresentation(input_truth_table), input_dimension, input_irr_poly)
         apn_match = APN.from_representation(
-            TruthTableRepresentation(match_truth_table),
-            1,
-            "0"
-        )
+            TruthTableRepresentation(match_truth_table), match_dimension, match_irr_poly)
         return ccz_tester.are_equivalent(apn_input, apn_match)
     except Exception:
         return None

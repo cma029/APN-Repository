@@ -1,13 +1,12 @@
-# abstract_representation.py
-# Description: Abstract base class for representing APN functions.
-
 from abc import ABC, abstractmethod
 
 class Representation(ABC):
     # Abstract base class for representing APN functions.
 
     @abstractmethod
-    def to_univariate_polynomial(self):
+    def to_univariate_polynomial(self, field_n, irr_poly):
+        # Convert the current truth table representation into a univariate polynomial representation.
+        # Returns a new Representation instance that represents the function as a univariate polynomial.
         pass
 
     @abstractmethod

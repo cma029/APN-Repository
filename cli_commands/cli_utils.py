@@ -7,8 +7,11 @@ def polynomial_to_str(univ_poly):
     if not univ_poly:
         return "0"
 
+    # Sort by monomial_exp descending.
+    sorted_poly = sorted(univ_poly, key=lambda t: t[1], reverse=True)
+
     parts = []
-    for (coeff_exp, mon_exp) in univ_poly:
+    for (coeff_exp, mon_exp) in sorted_poly:
         # Handle alpha part (a^coefficient_exp) but skip "^1".
         if coeff_exp == 0:
             alpha_part = ""

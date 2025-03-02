@@ -1,9 +1,8 @@
-import galois
-from representations.truth_table_representation import TruthTableRepresentation
 from computations.rank.delta_rank import DeltaRankComputation
 from computations.rank.gamma_rank import GammaRankComputation
 from computations.spectra.od_differential_spectrum import ODDifferentialSpectrumComputation
 from computations.spectra.od_walsh_spectrum import ODWalshSpectrumComputation
+from computations.poly_parse_utils import parse_irreducible_poly_str
 from c_invariants_bindings import (
     create_function_from_truth_table,
     create_function_from_truth_table_and_poly,
@@ -15,34 +14,17 @@ from c_invariants_bindings import (
     function_is_quadratic
 )
 
-def parse_irreducible_poly_str(poly_str: str) -> int:
-    # Converts a polynomial string (e.g. 'x^6 + x^4 + x^3 + x + 1') into an integer bitmask.
-    # Bit for x^k is set if k is in the polynomial. Example: 'x^6 + x^4 + x^3 + x + 1' -> 0b01011011 (0x5B).
-    cleaned_str = poly_str.replace(" ", "").replace("^+", "^")
-    terms = cleaned_str.split('+')
-    bitmask = 0
-    for t in terms:
-        if t == '1':
-            bitmask |= (1 << 0)
-        elif t == 'x':
-            bitmask |= (1 << 1)
-        else:
-            # Might be x^k.
-            if t.startswith('x^'):
-                k_exponent = int(t[2:])
-                bitmask |= (1 << k_exponent)
-    return bitmask
-
 
 def _create_func_ptr_from_apn(apn):
     # Internal helper that return a function pointer (ptr) handle in C++.
-    apn_tt = apn._get_truth_table_list()
+    rep = apn.get_truth_table()
+    apn_tt_list = rep.truth_table
     if not apn.irr_poly.strip():
         # No polynomial => skip.
-        return create_function_from_truth_table(apn_tt)
+        return create_function_from_truth_table(apn_tt_list)
     
     poly_bits = parse_irreducible_poly_str(apn.irr_poly.strip())
-    return create_function_from_truth_table_and_poly(apn_tt, poly_bits)
+    return create_function_from_truth_table_and_poly(apn_tt_list, poly_bits)
 
 
 def compute_is_apn(apn):
@@ -81,6 +63,7 @@ def compute_anf_invariants(apn):
     apn.invariants["is_monomial"] = bool(monomial_flag)
     apn.invariants["is_quadratic"] = bool(quadratic_flag)
 
+
 def compute_k_to_1(apn):
     if "k_to_1" in apn.invariants:
         return
@@ -101,15 +84,9 @@ def compute_delta_rank(apn):
         return
 
     try:
-        apn_tt = apn._get_truth_table_list()
-        temporary_apn = apn.__class__.from_representation(
-            TruthTableRepresentation(apn_tt),
-            apn.field_n,
-            apn.irr_poly
-        )
         delta_comp = DeltaRankComputation()
-        rank_val = delta_comp.compute_rank(temporary_apn)
-        apn.invariants["delta_rank"] = rank_val
+        rank_value = delta_comp.compute_rank(apn)
+        apn.invariants["delta_rank"] = rank_value
     except:
         apn.invariants["delta_rank"] = None
 
@@ -119,15 +96,9 @@ def compute_gamma_rank(apn):
         return
 
     try:
-        apn_tt = apn._get_truth_table_list()
-        temporary_apn = apn.__class__.from_representation(
-            TruthTableRepresentation(apn_tt),
-            apn.field_n,
-            apn.irr_poly
-        )
         gamma_comp = GammaRankComputation()
-        rank_val = gamma_comp.compute_rank(temporary_apn)
-        apn.invariants["gamma_rank"] = rank_val
+        rank_value = gamma_comp.compute_rank(apn)
+        apn.invariants["gamma_rank"] = rank_value
     except:
         apn.invariants["gamma_rank"] = None
 
@@ -144,14 +115,8 @@ def compute_odds(apn):
         return
 
     try:
-        apn_tt = apn._get_truth_table_list()
-        temporary_apn = apn.__class__.from_representation(
-            TruthTableRepresentation(apn_tt),
-            apn.field_n,
-            apn.irr_poly
-        )
         odd_comp = ODDifferentialSpectrumComputation()
-        spectrum_res = odd_comp.compute_spectrum(temporary_apn)
+        spectrum_res = odd_comp.compute_spectrum(apn)
         apn.invariants["odds"] = {int(key): int(val) for key, val in spectrum_res.items()}
     except:
         apn.invariants["odds"] = "non-quadratic"
@@ -169,20 +134,14 @@ def compute_odws(apn):
         return
 
     try:
-        apn_tt = apn._get_truth_table_list()
-        temporary_apn = apn.__class__.from_representation(
-            TruthTableRepresentation(apn_tt),
-            apn.field_n,
-            apn.irr_poly
-        )
         odw_comp = ODWalshSpectrumComputation()
-        spectrum_res = odw_comp.compute_spectrum(temporary_apn)
+        spectrum_res = odw_comp.compute_spectrum(apn)
         apn.invariants["odws"] = {int(key): int(val) for key, val in spectrum_res.items()}
     except:
         apn.invariants["odws"] = "non-quadratic"
 
-def compute_all_invariants(apn):
 
+def compute_all_invariants(apn):
     # Invariants:
     compute_anf_invariants(apn)
     compute_is_apn(apn)
@@ -197,6 +156,7 @@ def compute_all_invariants(apn):
     compute_gamma_rank(apn)
 
     reorder_invariants(apn)
+
 
 def reorder_invariants(apn):
     desired = [

@@ -36,7 +36,14 @@ def compute_input_invariants_cli(input_apn_index, max_threads):
     # Concurrency with process-based executor.
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_list = [executor.submit(_compute_invariants_for_one_apn, task_item) for task_item in tasks]
+
+        # New lines: show status for each completed job.
+        total_count = len(future_list)
+        completed_count = 0
+
         for future in concurrent.futures.as_completed(future_list):
+            completed_count += 1
+            click.echo(f"Completed job {completed_count} of {total_count}.")
             apn_idx, updated_dict = future.result()
             result_map[apn_idx] = updated_dict
 
@@ -59,6 +66,7 @@ def compute_input_invariants_cli(input_apn_index, max_threads):
             click.echo(format_generic_apn(show_apn, f"INPUT_APN {idx}"))
             click.echo("-" * 100)
         click.echo("Finished computing all invariants for all input APNs.")
+
 
 def _compute_invariants_for_one_apn(task: Tuple[int, Dict[str, Any]]) -> Tuple[int, Dict[str, Any]]:
     apn_idx, apn_dict = task
@@ -87,6 +95,7 @@ def _compute_invariants_for_one_apn(task: Tuple[int, Dict[str, Any]]) -> Tuple[i
 
     apn_dict["invariants"] = apn_obj.invariants
     return (apn_idx, apn_dict)
+
 
 def _build_apn_for_print(apn_dict: Dict[str, Any]) -> APN:
     poly_data = apn_dict.get("poly", [])

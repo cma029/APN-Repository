@@ -138,6 +138,9 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             if not line_text:
                 continue
 
+            # Trim trailing comma.
+            line_text = line_text.rstrip(',')
+            
             if citation_all:
                 poly_part = line_text.split('[', 1)[0].strip()
                 bracketed_citation = citation_all.strip()

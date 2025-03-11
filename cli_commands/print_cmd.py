@@ -2,13 +2,15 @@ import click
 from storage.json_storage_utils import load_input_apns_and_matches
 from cli_commands.cli_utils import format_generic_apn, build_apn_from_dict
 
-@click.command("print-matches")
+@click.command("print")
 @click.option("--index", "input_apn_index", default=None, type=int,
-              help="If specified, print matches for only that APN index.")
+              help="If specified, only prints that single index.")
 @click.option("--summary", is_flag=True,
               help="If specified, prints a summary of matches for each APN.")
-def print_matches_cli(input_apn_index, summary):
-    # Prints matches from storage/input_apns_and_matches.json.
+@click.option("--input-only", is_flag=True,
+              help="If specified, only prints the input APNs.")
+def print_cli(input_apn_index, summary, input_only):
+    # Print APNs and (optionally) their matches from storage/input_apns_and_matches.json.
     apn_dicts = load_input_apns_and_matches()
     if not apn_dicts:
         click.echo("No input APNs found. Please run 'add-input' first.")
@@ -21,21 +23,32 @@ def print_matches_cli(input_apn_index, summary):
             click.echo(f"  APN #{idx}: {len(matches)} matches")
         return
 
+    # If no index provided, then print all APN(s).
     if input_apn_index is None:
-        # Print matches for all input APNs.
         for idx, apn_d in enumerate(apn_dicts):
-            _print_single_apn_matches(apn_d, idx)
+            if input_only:
+                _print_single_apn_only(apn_d, idx)
+            else:
+                _print_single_apn_with_matches(apn_d, idx)
     else:
-        # Print the matches for one specific input APN.
+        # If user gave the --index option, then just print that single APN.
         if input_apn_index < 0 or input_apn_index >= len(apn_dicts):
             click.echo(f"Invalid input APN index: {input_apn_index}.")
             return
         apn_d = apn_dicts[input_apn_index]
-        _print_single_apn_matches(apn_d, input_apn_index)
+        if input_only:
+            _print_single_apn_only(apn_d, input_apn_index)
+        else:
+            _print_single_apn_with_matches(apn_d, input_apn_index)
 
+def _print_single_apn_only(apn_dict, idx):
+    # Prints only the 'input' APN object.
+    apn_obj = build_apn_from_dict(apn_dict)
+    click.echo(format_generic_apn(apn_obj, f"\nINPUT APN {idx}"))
+    click.echo("-" * 100)
 
-def _print_single_apn_matches(apn_dict, idx):
-    # Convert the dictionary into an APN object (for better formatting).
+def _print_single_apn_with_matches(apn_dict, idx):
+    # Prints the 'input' APN object and then prints all matches below it.
     input_apn_object = build_apn_from_dict(apn_dict)
 
     click.echo(format_generic_apn(input_apn_object, f"\nINPUT APN {idx}"))
@@ -46,7 +59,6 @@ def _print_single_apn_matches(apn_dict, idx):
     if matches:
         for i, match_d in enumerate(matches, start=1):
             compare_types = match_d.get("compare_types", [])
-            # Convert the matched dictionary into an APN object.
             matched_object = build_apn_from_dict(match_d)
 
             click.echo(f"  - Matched on {compare_types} with:")

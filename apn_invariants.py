@@ -16,7 +16,7 @@ from c_invariants_bindings import (
 
 
 def _create_func_ptr_from_apn(apn):
-    # Internal helper that return a function pointer (ptr) handle in C++.
+    # Internal helper that returns a function pointer (ptr) handle in C++.
     rep = apn.get_truth_table()
     apn_tt_list = rep.truth_table
     if not apn.irr_poly.strip():
@@ -45,9 +45,11 @@ def compute_is_apn(apn):
 
 
 def compute_anf_invariants(apn):
-    # It’s cheaper to compute algebraic_degree, is_monomial, and is_quadratic
-    # in one pass since they all use the same _create_func_ptr_from_apn().
-    # When computing the Algebraic Normal Form (ANF), do all three:
+    """
+    It's cheaper to compute algebraic_degree, is_monomial, and is_quadratic
+    in one pass since they all use the same _create_func_ptr_from_apn().
+    When computing the Algebraic Normal Form (ANF), do all three:
+    """
     if all(key in apn.invariants for key in ["algebraic_degree", "is_monomial", "is_quadratic"]):
         return
 
@@ -83,6 +85,11 @@ def compute_delta_rank(apn):
     if "delta_rank" in apn.invariants:
         return
 
+    # Avoid computing delta rank if field_n>10.
+    if apn.field_n > 10:
+        apn.invariants["delta_rank"] = None
+        return
+
     try:
         delta_comp = DeltaRankComputation()
         rank_value = delta_comp.compute_rank(apn)
@@ -93,6 +100,11 @@ def compute_delta_rank(apn):
 
 def compute_gamma_rank(apn):
     if "gamma_rank" in apn.invariants:
+        return
+
+    # Avoid computing gamma rank if field_n>10.
+    if apn.field_n > 10:
+        apn.invariants["gamma_rank"] = None
         return
 
     try:
@@ -151,7 +163,7 @@ def compute_all_invariants(apn):
     compute_odds(apn)
     compute_odws(apn)
 
-    # Rank:
+    # Rank computations:
     compute_delta_rank(apn)
     compute_gamma_rank(apn)
 
@@ -159,6 +171,7 @@ def compute_all_invariants(apn):
 
 
 def reorder_invariants(apn):
+    # Reorders apn.invariants with a desired list of keys, followed by any leftovers.
     desired = [
         "odds",
         "odws",
@@ -177,7 +190,7 @@ def reorder_invariants(apn):
         if key in old_invariants:
             new_invariants[key] = old_invariants[key]
 
-    # Append leftover keys at the end.
+    # Append leftover keys at the end if any.
     for leftover_key in old_invariants:
         if leftover_key not in new_invariants:
             new_invariants[leftover_key] = old_invariants[leftover_key]

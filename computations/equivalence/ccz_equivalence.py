@@ -3,7 +3,6 @@ from computations.equivalence.base_equivalence import EquivalenceTest
 from sage.all import GF, Matrix
 from sage.coding.linear_code import LinearCode
 
-
 """
 CCZ Equivalence implementations are adapted from the code provided in:
 
@@ -29,7 +28,7 @@ def are_ccz_equivalent_lists(f, g):
     a linear code from the truth table and checks for permutation-equivalence.
 
     https://github.com/okazymyrov/sbox/blob/master/Sage/CSbox.sage#L624
-
+    
     """
     if len(f) != len(g):
         raise ValueError("f and g have different sizes, cannot be CCZ tested.")
@@ -59,12 +58,12 @@ def are_ccz_equivalent_lists(f, g):
 
 class CCZEquivalenceTest(EquivalenceTest):
     """
-    CCZ equivalence test.
+    CCZ equivalence test expecting two APN objects.
+    Uses their truth tables to check if they are CCZ-equivalent.
     """
 
     def are_equivalent(self, apnF, apnG):
-        # Obtain truth tables from the APN objects.
+        # Extract truth tables from the APN objects.
         f = apnF._get_truth_table_list()
         g = apnG._get_truth_table_list()
-
         return are_ccz_equivalent_lists(f, g)

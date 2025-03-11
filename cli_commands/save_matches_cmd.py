@@ -1,8 +1,7 @@
 import click
 import json
-from cli_commands.cli_utils import polynomial_to_str
+from cli_commands.cli_utils import polynomial_to_str, build_apn_from_dict
 from storage.json_storage_utils import load_input_apns_and_matches
-from apn_object import APN
 
 @click.command("save-matches")
 @click.option("--output-file", default="matches_output.json", type=str,
@@ -15,16 +14,13 @@ def save_matches_cli(output_file):
         return
 
     output_json_data = {}
+
     for input_index, input_apn_dictionary in enumerate(input_apn_list):
         # Convert this dictionary into an APN object for generating a 'poly_str'.
-        input_apn_object = APN(
-            input_apn_dictionary["poly"],
-            input_apn_dictionary["field_n"],
-            input_apn_dictionary["irr_poly"]
-        )
-        input_apn_object.invariants = input_apn_dictionary.get("invariants", {})
+        input_apn_object = build_apn_from_dict(input_apn_dictionary)
 
         input_poly_str = polynomial_to_str(input_apn_object.representation.univariate_polynomial)
+
         # Build a summary dictionary for the main input APN.
         input_apn_summary = {
             "field_n": input_apn_object.field_n,
@@ -39,12 +35,7 @@ def save_matches_cli(output_file):
         matches_list = input_apn_dictionary.get("matches", [])
         for match_apn_dictionary in matches_list:
             # Convert the match dictionary into an APN object.
-            match_apn_object = APN(
-                match_apn_dictionary["poly"],
-                match_apn_dictionary["field_n"],
-                match_apn_dictionary["irr_poly"]
-            )
-            match_apn_object.invariants = match_apn_dictionary.get("invariants", {})
+            match_apn_object = build_apn_from_dict(match_apn_dictionary)
 
             match_poly_str = polynomial_to_str(match_apn_object.representation.univariate_polynomial)
             compare_types_value = match_apn_dictionary.get("compare_types", [])

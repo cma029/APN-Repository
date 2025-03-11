@@ -4,7 +4,7 @@ from cli_commands.cli_utils import format_generic_apn
 from typing import Optional
 from apn_object import APN
 
-@click.command("read-db-apns")
+@click.command("read-db")
 @click.option("--field-n", required=True, type=int,
               help="The dimension n for GF(2^n).")
 @click.option("--range", "apn_range", nargs=2, type=int, default=None,

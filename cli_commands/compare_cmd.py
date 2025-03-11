@@ -17,14 +17,15 @@ from apn_object import APN
 
 
 @click.command("compare")
-@click.option("--compare-type", type=click.Choice(["odds", "odws", "delta", "gamma", "all"]), 
+@click.option("--type", "compare_type", type=click.Choice(["odds", "odws", "delta", "gamma", "all"]),
               default="all", help="Which invariants to compare. 'all' means delta, gamma, odds, odws.")
 @click.option("--field-n", required=True, type=int, help="The dimension n for GF(2^n).")
 @click.option("--max-threads", default=None, type=int,
               help="Limit the number of parallel processes used. Default uses all available cores.")
 def compare_apns_cli(field_n, compare_type, max_threads):
     # Compares invariants of input APNs with the invariants of stored database APNs for GF(2^n).
-    # Invariants are computed when needed, and matches are stored storage/input_apns_and_matches.json.
+    # Invariants are computed when needed, and matches are stored in storage/input_apns_and_matches.json.
+
     input_apn_list = load_input_apns_and_matches()
     if not input_apn_list:
         click.echo("No input APNs found. Please run 'add-input' first.")
@@ -40,6 +41,18 @@ def compare_apns_cli(field_n, compare_type, max_threads):
     else:
         invariants_to_compare = [compare_type]
 
+    # Not possible to select delta and gamma ranks for field-n dimensions larger than 10.
+    if field_n > 10:
+        filtered = [invariants for invariants in invariants_to_compare if invariants not in ("delta", "gamma")]
+        removed = set(invariants_to_compare) - set(filtered)
+        if removed:
+            click.echo(f"Warning: {', '.join(removed)} not supported for n > 10. Skipping those invariants.")
+        invariants_to_compare = filtered
+
+    if not invariants_to_compare:
+        click.echo("No valid invariants remain to compare. Exiting.")
+        return
+
     # Concurrency: compute any missing invariants in the input APNs.
     tasks = [
         (idx, apn_dict, invariants_to_compare)
@@ -47,7 +60,7 @@ def compare_apns_cli(field_n, compare_type, max_threads):
     ]
     max_procs = max_threads or None
 
-    updated_map: Dict[int, Dict[str,Any]] = {}
+    updated_map: Dict[int, Dict[str, Any]] = {}
 
     # Concurrency with process-based executor.
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_procs) as executor:
@@ -70,7 +83,7 @@ def compare_apns_cli(field_n, compare_type, max_threads):
     for i, input_apn_data in enumerate(input_apn_list):
         existing_matches = input_apn_data.get("matches", None)
         if not existing_matches:
-            # Full database search.
+            # Full database search (if no matches exist yet).
             fresh_matches = []
             in_invs = input_apn_data["invariants"]
             for db_apn_obj in db_apn_list:
@@ -85,7 +98,7 @@ def compare_apns_cli(field_n, compare_type, max_threads):
                     fresh_matches.append(match_dict)
             input_apn_data["matches"] = fresh_matches
         else:
-            # Narrowing the matches.
+            # Narrow existing matches.
             in_invs = input_apn_data["invariants"]
             narrowed = []
             for match_item in existing_matches:
@@ -122,7 +135,6 @@ def _compute_invariants_for_input_apn(task_tuple: Tuple[int, Dict[str, Any], Lis
         new_apn = APN([], apn_dictionary["field_n"], apn_dictionary["irr_poly"])
 
     new_apn.invariants = apn_dictionary.get("invariants", {})
-
     local_invs = new_apn.invariants
 
     # Delta rank computation.

@@ -1,12 +1,9 @@
 import click
-from apn_object import APN
 from storage.json_storage_utils import load_input_apns_and_matches
-from cli_commands.cli_utils import format_generic_apn
-from typing import Optional
-from apn_object import APN
+from cli_commands.cli_utils import format_generic_apn, build_apn_from_dict
 
 @click.command("print-matches")
-@click.option("--input-apn-index", default=None, type=int,
+@click.option("--index", "input_apn_index", default=None, type=int,
               help="If specified, print matches for only that APN index.")
 @click.option("--summary", is_flag=True,
               help="If specified, prints a summary of matches for each APN.")
@@ -39,10 +36,9 @@ def print_matches_cli(input_apn_index, summary):
 
 def _print_single_apn_matches(apn_dict, idx):
     # Convert the dictionary into an APN object (for better formatting).
-    in_apn_obj = APN(apn_dict["poly"], apn_dict["field_n"], apn_dict["irr_poly"])
-    in_apn_obj.invariants = apn_dict.get("invariants", {})
+    input_apn_object = build_apn_from_dict(apn_dict)
 
-    click.echo(format_generic_apn(in_apn_obj, f"\nINPUT_APN {idx}"))
+    click.echo(format_generic_apn(input_apn_object, f"\nINPUT APN {idx}"))
     click.echo("-" * 100)
 
     matches = apn_dict.get("matches", [])
@@ -51,13 +47,11 @@ def _print_single_apn_matches(apn_dict, idx):
         for i, match_d in enumerate(matches, start=1):
             compare_types = match_d.get("compare_types", [])
             # Convert the matched dictionary into an APN object.
-            matched_obj = APN(match_d["poly"], match_d["field_n"], match_d["irr_poly"])
-            matched_obj.invariants = match_d.get("invariants", {})
+            matched_object = build_apn_from_dict(match_d)
 
-            from pprint import pformat
             click.echo(f"  - Matched on {compare_types} with:")
             click.echo("-" * 100)
-            click.echo(format_generic_apn(matched_obj, f"Matched APN #{idx}.{i}"))
+            click.echo(format_generic_apn(matched_object, f"Matched APN #{idx}.{i}"))
             click.echo("-" * 100)
     else:
         click.echo("  - No matches.")

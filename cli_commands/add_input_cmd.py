@@ -28,7 +28,7 @@ from apn_invariants import compute_is_apn
         help=("Path to file where the first line is field n integer and each subsequent line "
         "is a univariate polynomial represented by 'g' and 'x', optionally with bracketed citation.\n"
         "Example: g^15*x^48 + g^16*x^33 + x^3 [Some Citation]\n"
-        "If --citation-all is used, that overrides any bracket citations in the file."))
+        "If --citation-all is used, that overrides any bracket in the file."))
 @click.option("--citation", multiple=True,
         help="Attach a citation string for each APN, in order. E.g. --citation '[BL22]' multiple times.")
 @click.option("--citation-all", default=None, type=str,
@@ -36,7 +36,12 @@ from apn_invariants import compute_is_apn
 @click.option("--max-threads", default=None, type=int,
         help="Limit the number of parallel processes used. Default uses all available cores.")
 def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citation_all, max_threads):
-    # Adds user-specified APNs to storage/input_apns_and_matches.json.
+    """
+    Adds user-specified APNs to storage/input_apns_and_matches.json.
+      - Inline polynomials via --poly
+      - Truth table files via --tt-file
+      - Polynomial-based files via --poly-file
+    """
 
     # The user supplied polynomial(s) inline but no field_n dimension. Raise error.
     if poly and (field_n is None):
@@ -45,14 +50,15 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
     apn_list = load_input_apns_and_matches()
     existing_keys = set()
 
-    # Rebuild existing APN(s) from dictionary and then generate it's final key.
+    # Rebuild existing APN(s) from dictionary and generate their final key.
     for existing_apn_dictionary in apn_list:
         key_value = _build_existing_key(existing_apn_dictionary)
         existing_keys.add(key_value)
 
+    # New APNs from all sources.
     new_apns = []
 
-    # Univariate polynomials: --poly as input.
+    # Univariate polynomials as lists of tuples: --poly as input.
     for poly_str in poly:
         try:
             poly_tuples = ast.literal_eval(poly_str)
@@ -79,9 +85,9 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
         lines = [ln.strip() for ln in file_path_object.read_text().splitlines() if ln.strip()]
         if len(lines) < 2:
             click.echo(
-                f"File '{tt_filepath_str}' do not have enough lines (field n and min. one truth table).", err=True)
+                f"File '{tt_filepath_str}' does not have enough lines (field n + at least one truth table).", err=True)
             continue
-        
+
         # The first line (field n).
         try:
             field_n_line = int(lines[0])
@@ -89,7 +95,7 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             click.echo(f"File '{tt_filepath_str}': first line must be integer field n.", err=True)
             continue
 
-        # The subsequent lines.
+        # The subsequent lines where each line is a Truth Table row.
         for tt_line in lines[1:]:
             tt_values = _parse_tt_values(tt_line)
             if tt_values is None:
@@ -113,7 +119,7 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             new_apns.append(apn_object)
             existing_keys.add(candidate_key)
 
-    # Univariate polynomial-based file: --poly-file as input.
+    # Univariate polynomial-based files: --poly-file as input.
     for poly_path_str in poly_file:
         file_path_object = Path(poly_path_str)
         if not file_path_object.is_file():
@@ -123,7 +129,7 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
         lines = [ln.strip() for ln in file_path_object.read_text().splitlines() if ln.strip()]
         if len(lines) < 2:
             click.echo(
-                f"File '{poly_path_str}' do not have enough lines (field n and min. one truth table).", err=True)
+                f"File '{poly_path_str}' does not have enough lines (field n + at least one polynomial).", err=True)
             continue
 
         # The first line (field n).
@@ -133,14 +139,14 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             click.echo(f"File '{poly_path_str}': first line must be integer field n.", err=True)
             continue
 
-        # The subsequent lines.
+        # The subsequent lines where each line is a univariate polynomial plus optional [citation].
         for line_no, line_text in enumerate(lines[1:], start=2):
             if not line_text:
                 continue
 
             # Trim trailing comma.
             line_text = line_text.rstrip(',')
-            
+
             if citation_all:
                 poly_part = line_text.split('[', 1)[0].strip()
                 bracketed_citation = citation_all.strip()
@@ -150,16 +156,14 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             try:
                 poly_list_literal = _parse_line_to_univ_list_literal(poly_part)
             except ValueError as error:
-                click.echo(
-                    f"Error in '{poly_path_str}' line {line_no}: {error}", err=True)
+                click.echo(f"Error in '{poly_path_str}' line {line_no}: {error}", err=True)
                 continue
 
             # Evaluate the literal as a list of (coefficient_exp, monomial_exp).
             try:
                 poly_list_data = ast.literal_eval(poly_list_literal)
             except Exception as parse_exc:
-                click.echo(
-                    f"Error building polynomial on line {line_no} in '{poly_path_str}': {parse_exc}", err=True)
+                click.echo(f"Error building polynomial on line {line_no} in '{poly_path_str}': {parse_exc}", err=True)
                 continue
 
             apn_object = APN(poly_list_data, field_n_line, irr_poly)
@@ -174,11 +178,12 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             new_apns.append(apn_object)
             existing_keys.add(candidate_key)
 
+    # Exit if no new APNs were found.
     if not new_apns:
         click.echo("No new APNs were added.")
         return
 
-    # Concurrent Differential Uniformity check: is_apn. If not APN, we skip the APN.
+    # Check if each new APN is_apn (differential uniformity == 2).
     tasks = [(idx_val, apn_obj) for idx_val, apn_obj in enumerate(new_apns)]
     max_workers = max_threads or None
     results_map = {}
@@ -190,7 +195,6 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             results_map[idx_val] = updated_apn_obj
 
     final_added_apns = []
-    # Filter out non-APN.
     for idx_val in range(len(new_apns)):
         updated_apn_obj = results_map.get(idx_val)
         if updated_apn_obj and updated_apn_obj.invariants.get("is_apn", False):
@@ -266,12 +270,11 @@ def _build_existing_key(apn_dictionary):
 
 
 def _build_key_from_apn(apn_object):
-    # To detect duplicates, create a JSON-encoded key.
+    # To detect duplicates. Produces a JSON-based hash key.
     if hasattr(apn_object.representation, "univariate_polynomial"):
         sorted_poly = sorted(
             apn_object.representation.univariate_polynomial, key=lambda x: (x[0], x[1]))
-        return json.dumps(
-            ["POLY", apn_object.field_n, apn_object.irr_poly, sorted_poly], sort_keys=True)
+        return json.dumps(["POLY", apn_object.field_n, apn_object.irr_poly, sorted_poly], sort_keys=True)
     else:
         # Truth Table-based.
         hasher = hashlib.sha256()
@@ -280,8 +283,7 @@ def _build_key_from_apn(apn_object):
             hasher.update(value.to_bytes(4, 'little'))
         tt_hash = hasher.hexdigest()
 
-        return json.dumps(
-            ["TT", apn_object.field_n, apn_object.irr_poly, tt_hash], sort_keys=True)
+        return json.dumps(["TT", apn_object.field_n, apn_object.irr_poly, tt_hash], sort_keys=True)
 
 
 def _parse_tt_values(line_str):
@@ -315,7 +317,7 @@ def _parse_tt_values(line_str):
 
 
 def _extract_citation(line: str):
-    # Try to extract bracketed [Citation] from a line.
+    # Attempts to extract bracketed [Citation] from a line.
     start_idx = line.rfind('[')
     end_idx = line.rfind(']')
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:

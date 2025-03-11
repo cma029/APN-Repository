@@ -40,6 +40,7 @@ def polynomial_to_str(univ_poly):
 
     return " + ".join(parts)
 
+
 def _invariants_str_with_linebreak(invariants: dict) -> str:
     # Forced line break after 'gamma_rank'.
     if not invariants:
@@ -65,6 +66,7 @@ def _invariants_str_with_linebreak(invariants: dict) -> str:
     joined_str = "".join(result_pieces)
     return "{" + joined_str + "}"
 
+
 def format_generic_apn(apn: APN, label: str) -> str:
     reorder_invariants(apn)
 
@@ -81,3 +83,23 @@ def format_generic_apn(apn: APN, label: str) -> str:
     lines.append(f"  Invariants: {inv_str}")
 
     return "\n".join(lines)
+
+
+def build_apn_from_dict(apn_dict: dict) -> APN:
+    poly_list = apn_dict.get("poly", [])
+    field_n = apn_dict.get("field_n", 0)
+    irr_poly = apn_dict.get("irr_poly", "")
+    cached_tt = apn_dict.get("cached_tt", [])
+
+    if poly_list:
+        apn_obj = APN(poly_list, field_n, irr_poly)
+        if cached_tt:
+            apn_obj._cached_tt_list = cached_tt
+    else:
+        if cached_tt:
+            apn_obj = APN.from_cached_tt(cached_tt, field_n, irr_poly)
+        else:
+            apn_obj = APN([], field_n, irr_poly)
+
+    apn_obj.invariants = apn_dict.get("invariants", {})
+    return apn_obj

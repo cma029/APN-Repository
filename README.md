@@ -177,13 +177,24 @@ python main.py reset-storage [--yes]
 
 - Deletes input_apns_and_matches.json and equivalence_list.json.
 
-### 5.7 save-matches
+### 5.7 save
 
-```
-python main.py save-matches --output-file <jsonfile>
+```bash
+python main.py save
+  [--matches]
+  [--poly]
+  [--tt]
+  [--file-name <str>]
 ```
 
-- Exports the current matches for each input APN to a JSON file.
+- The 'save' command can export data from **input** APN(s) in `input_apns_and_matches.json`.
+- **Options**:
+  - `--matches`: Exports your **input** APN(s) and **matches** (if any) to a JSON file.
+  - `--poly`: Exports all **input** APN(s) as list in **Univariate Polynomial Representation**.
+  - `--tt`: Exports all **input** APN(s) as list of **Truth Tables**.
+  - `--file-name`: If only one of `--matches`, `--poly`, or `--tt` is chosen, you can override its default output filename. 
+  
+If multiple flags are used, each type uses its own default name (e.g. `matches_output.json`, `poly_output.txt`, `tt_output.txt`). When exporting with `--poly` or `--tt`, any dimension mismatch among APNs causes an error and the command aborts without writing a file. This ensures consistency of dimension in the exported data.
 
 ### 5.8 store-input
 

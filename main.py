@@ -8,7 +8,7 @@ from cli_commands.compute_input_invariants_cmd import compute_input_invariants_c
 from cli_commands.print_cmd import print_cli
 from cli_commands.read_db_cmd import read_db_apns
 from cli_commands.reset_storage_cmd import reset_storage_cli
-from cli_commands.save_matches_cmd import save_matches_cli
+from cli_commands.save_to_file_cmd import save_to_file_cli
 from cli_commands.store_input_apns_cmd import store_input_apns_cli
 from cli_commands.uni3to1_cmd import uni3to1_equivalence_cli
 
@@ -26,7 +26,7 @@ cli.add_command(compute_input_invariants_cli)
 cli.add_command(print_cli)
 cli.add_command(read_db_apns)
 cli.add_command(reset_storage_cli)
-cli.add_command(save_matches_cli)
+cli.add_command(save_to_file_cli)
 cli.add_command(store_input_apns_cli)
 cli.add_command(uni3to1_equivalence_cli)
 

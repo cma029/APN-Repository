@@ -96,21 +96,31 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
             continue
 
         # The subsequent lines where each line is a Truth Table row.
-        for tt_line in lines[1:]:
-            tt_values = _parse_tt_values(tt_line)
-            if tt_values is None:
-                click.echo(
-                    f"Error: Could not parse truth table line in '{tt_filepath_str}': {tt_line}", err=True)
-                continue
+        # Using concurrency for the Lagrange interpolation part.
+        tasks_for_tt = []
+        for idx, tt_line in enumerate(lines[1:]):
+            tasks_for_tt.append((idx, tt_line, field_n_line, irr_poly))
 
-            if len(tt_values) != (1 << field_n_line):
-                click.echo(
-                    f"Wrong TT length. Received {len(tt_values)}, expected {1 << field_n_line} "
-                    f"for line: {tt_line}", err=True)
-                continue
+        tt_apn_results = [None] * len(tasks_for_tt)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_threads) as executor:
+            future_map = {}
+            for tdata in tasks_for_tt:
+                fut = executor.submit(_build_apn_from_tt_worker, tdata)
+                future_map[fut] = tdata[0]
 
-            apn_object = APN.from_representation(TruthTableRepresentation(tt_values), field_n_line, irr_poly)
+            for done_fut in concurrent.futures.as_completed(future_map):
+                local_idx = future_map[done_fut]
+                try:
+                    local_idx, built_apn = done_fut.result()
+                    tt_apn_results[local_idx] = built_apn
+                except Exception as e:
+                    click.echo(f"Error building APN for TT index={local_idx} in '{tt_filepath_str}': {e}", err=True)
+                    tt_apn_results[local_idx] = None
 
+        # Filter out the None results.
+        for apn_object in tt_apn_results:
+            if apn_object is None:
+                continue            
             candidate_key = _build_key_from_apn(apn_object)
             if candidate_key in existing_keys:
                 click.echo(f"Skipped duplicate truth table line in '{tt_filepath_str}' (already in file).")
@@ -289,6 +299,11 @@ def _build_key_from_apn(apn_object):
 def _parse_tt_values(line_str):
     # Returns a list of integers or None if parsing fails.
     line_str = line_str.strip()
+
+    # If a line ends with }, then remove the trailing comma.
+    if line_str.endswith("},"):
+        line_str = line_str[:-1].rstrip()
+
     # Check for curly braces.
     if line_str.startswith("{") and line_str.endswith("}"):
         inside = line_str[1:-1].strip()
@@ -386,3 +401,16 @@ def _parse_monomial(segment: str) -> int:
             raise ValueError(f"Unrecognized monomial '{segment}'. Expected 'x^<int>'.")
         return int(exponent_str)
     raise ValueError(f"Unrecognized monomial '{segment}'. Expected 'x' or 'x^<int>'.")
+
+
+def _build_apn_from_tt_worker(task):
+    # Worker function for concurrency: Truth table -> Lagrange interpolation -> APN object.
+    idx, tt_line, field_n_line, irr_poly = task
+    tt_values = _parse_tt_values(tt_line)
+    if tt_values is None:
+        raise ValueError(f"Could not parse truth table line: {tt_line}")
+    if len(tt_values) != (1 << field_n_line):
+        raise ValueError(f"Truth table length mismatch for line: {tt_line}")
+    tt_rep = TruthTableRepresentation(tt_values)
+    apn_object = APN.from_representation(tt_rep, field_n_line, irr_poly)
+    return (idx, apn_object)

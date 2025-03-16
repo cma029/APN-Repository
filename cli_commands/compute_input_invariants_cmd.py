@@ -33,11 +33,10 @@ def compute_input_invariants_cli(input_apn_index, max_threads):
     max_workers = max_threads or None
     result_map = {}
 
-    # Concurrency with process-based executor.
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_list = [executor.submit(_compute_invariants_for_one_apn, task_item) for task_item in tasks]
 
-        # New lines: show status for each completed job.
+        # Show status for each completed job.
         total_count = len(future_list)
         completed_count = 0
 
@@ -48,7 +47,7 @@ def compute_input_invariants_cli(input_apn_index, max_threads):
             result_map[apn_idx] = updated_dict
 
     # Merge results into the main APN list.
-    for apn_index, original_dict in enumerate(apn_list):
+    for apn_index in range(len(apn_list)):
         if apn_index in result_map and result_map[apn_index] is not None:
             apn_list[apn_index] = result_map[apn_index]
 
@@ -57,13 +56,13 @@ def compute_input_invariants_cli(input_apn_index, max_threads):
     if input_apn_index is not None:
         updated_dict = apn_list[input_apn_index]
         show_apn = build_apn_from_dict(updated_dict)
-        click.echo(format_generic_apn(show_apn, f"INPUT_APN {input_apn_index}"))
+        click.echo(format_generic_apn(show_apn, f"INPUT APN {input_apn_index}"))
         click.echo("-" * 100)
-        click.echo(f"Finished computing all invariants for INPUT_APN {input_apn_index}.")
+        click.echo(f"Finished computing all invariants for INPUT APN {input_apn_index}.")
     else:
         for idx, item in enumerate(apn_list):
             show_apn = build_apn_from_dict(item)
-            click.echo(format_generic_apn(show_apn, f"INPUT_APN {idx}"))
+            click.echo(format_generic_apn(show_apn, f"INPUT APN {idx}"))
             click.echo("-" * 100)
         click.echo("Finished computing all invariants for all input APNs.")
 
@@ -76,18 +75,18 @@ def _compute_invariants_for_one_apn(task: Tuple[int, Dict[str, Any]]) -> Tuple[i
     cached_tt = apn_dict.get("cached_tt", [])
 
     if poly_data:
-        apn_obj = APN(poly_data, apn_dict["field_n"], apn_dict["irr_poly"])
+        apn_object = APN(poly_data, apn_dict["field_n"], apn_dict["irr_poly"])
         if cached_tt:
-            apn_obj._cached_tt_list = cached_tt
+            apn_object._cached_tt_list = cached_tt
     elif cached_tt:
-        apn_obj = APN.from_cached_tt(cached_tt, apn_dict["field_n"], apn_dict["irr_poly"])
+        apn_object = APN.from_cached_tt(cached_tt, apn_dict["field_n"], apn_dict["irr_poly"])
     else:
-        apn_obj = APN([], apn_dict["field_n"], apn_dict["irr_poly"])
+        apn_object = APN([], apn_dict["field_n"], apn_dict["irr_poly"])
 
     # Merge existing invariants.
-    apn_obj.invariants = apn_dict.get("invariants", {})
+    apn_object.invariants = apn_dict.get("invariants", {})
 
-    compute_all_invariants(apn_obj)
+    compute_all_invariants(apn_object)
 
-    apn_dict["invariants"] = apn_obj.invariants
+    apn_dict["invariants"] = apn_object.invariants
     return (apn_idx, apn_dict)

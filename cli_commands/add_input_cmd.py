@@ -141,12 +141,14 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
                     tt_apn_results[local_idx] = None
 
         # Filter out the None results.
-        for apn_object in tt_apn_results:
+        for idx, apn_object in enumerate(tt_apn_results):
             if apn_object is None:
-                continue            
+                continue
             candidate_key = _build_key_from_apn(apn_object)
             if candidate_key in existing_keys:
-                click.echo(f"Skipped duplicate truth table line in '{tt_filepath_str}' (already in file).")
+                file_line_number = idx + 2
+                click.echo(f"Skipped duplicate truth table line {file_line_number} "
+                           f"in '{tt_filepath_str}' (already in file).")
                 continue
 
             new_apns.append(apn_object)

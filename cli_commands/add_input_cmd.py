@@ -42,38 +42,60 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
       - Truth table files via --tt-file
       - Polynomial-based files via --poly-file
     """
-
-    # The user supplied polynomial(s) inline but no field_n dimension. Raise error.
-    if poly and (field_n is None):
-        raise click.ClickException("Error: --field-n is required when using the --poly option.")
-
     apn_list = load_input_apns_and_matches()
     existing_keys = set()
+
+    # Check if we already have APNs stored in file for field n dimension consistency.
+    existing_n = None
+    if apn_list:
+        # We check the dimension of the first APN. This becomes the "existing dimension".
+        existing_n = apn_list[0].get("field_n", None)
+        # Check that all APNs in the file have the same field_n dimension.
+        for idx, apn_dict in enumerate(apn_list):
+            fieldn = apn_dict.get("field_n", None)
+            if fieldn != existing_n:
+                raise click.ClickException(
+                    f"APN index {idx} in storage has field_n={fieldn} != {existing_n} (mismatch in file).")
 
     # Rebuild existing APN(s) from dictionary and generate their final key.
     for existing_apn_dictionary in apn_list:
         key_value = _build_existing_key(existing_apn_dictionary)
         existing_keys.add(key_value)
 
+    # Enforces that any new APN dimension matches existing_n, or set existing_n from that APN.
+    def _ensure_dimension_consistency(new_field_n):
+        nonlocal existing_n
+        if existing_n is None:
+            existing_n = new_field_n
+        else:
+            if new_field_n != existing_n:
+                raise click.ClickException(
+                    f"New APN dimension {new_field_n} does not match existing dimension {existing_n} in storage.")
+            
     # New APNs from all sources.
     new_apns = []
 
-    # Univariate polynomials as lists of tuples: --poly as input.
-    for poly_str in poly:
-        try:
-            poly_tuples = ast.literal_eval(poly_str)
-        except Exception as parse_exc:
-            click.echo(f"Error parsing user polynomial '{poly_str}': {parse_exc}", err=True)
-            continue
+    # Univariate polynomials as lists of tuples: --poly as input. Require a single dimension from --field-n.
+    if poly:
+        if field_n is None:
+            raise click.ClickException("Error: --field-n is required when using the --poly option.")
+        _ensure_dimension_consistency(field_n)
 
-        apn_object = APN(poly_tuples, field_n, irr_poly)
-        candidate_key = _build_key_from_apn(apn_object)
-        if candidate_key in existing_keys:
-            click.echo(f"Skipped duplicate polynomial {poly_str} (already in file).")
-            continue
+        for poly_str in poly:
+            try:
+                poly_tuples = ast.literal_eval(poly_str)
+            except Exception as parse_exc:
+                click.echo(f"Error parsing user polynomial '{poly_str}': {parse_exc}", err=True)
+                continue
 
-        new_apns.append(apn_object)
-        existing_keys.add(candidate_key)
+            apn_object = APN(poly_tuples, field_n, irr_poly)
+            candidate_key = _build_key_from_apn(apn_object)
+            if candidate_key in existing_keys:
+                click.echo(f"Skipped duplicate polynomial {poly_str} (already in file).")
+                continue
+
+            new_apns.append(apn_object)
+            existing_keys.add(candidate_key)
 
     # Truth table files: --tt-file as input.
     for tt_filepath_str in tt_file:
@@ -94,6 +116,7 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
         except ValueError:
             click.echo(f"File '{tt_filepath_str}': first line must be integer field n.", err=True)
             continue
+        _ensure_dimension_consistency(field_n_line)
 
         # The subsequent lines where each line is a Truth Table row.
         # Using concurrency for the Lagrange interpolation part.
@@ -148,6 +171,7 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
         except ValueError:
             click.echo(f"File '{poly_path_str}': first line must be integer field n.", err=True)
             continue
+        _ensure_dimension_consistency(field_n_line)
 
         # The subsequent lines where each line is a univariate polynomial plus optional [citation].
         for line_no, line_text in enumerate(lines[1:], start=2):

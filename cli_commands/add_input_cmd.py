@@ -16,7 +16,7 @@ from apn_invariants import compute_is_apn
 
 @click.command("add-input")
 @click.option("--poly", "-p", multiple=True,
-        help=("Univariate Polynomial in the form [(0,3), (1,9), ...]. Requires --field-n if used."))
+        help=("Univariate Polynomial in the form '[(0,3), (1,9), ...]'. Requires --field-n if used."))
 @click.option("--field-n", default=None, type=int, required=False, help=("GF(2^n) dimension (n). "
         "Required if using --poly. Not required if only using file-based inputs."))
 @click.option("--irr-poly", default="", type=str,

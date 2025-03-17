@@ -96,13 +96,13 @@ With regard to the concurrency:
 
 Run commands via:
 
-```
+```bash
 python main.py <command> [options...]
 ```
 
 ### 5.1 add-input
 
-```
+```bash
 python main.py add-input
   --poly <tuple> ...       
   --field-n <int>
@@ -121,20 +121,19 @@ python main.py add-input
 
 ### 5.2 compare
 
-```
+```bash
 python main.py compare
   --type [odds|odws|delta|gamma|all]
-  --field-n <int>
   --max-threads <int>
 ```
 
-- Compares invariants of input APNs vs. the database for dimension <field-n>.
+- Compares invariants of input APNs vs. the database for field n dimension for GF(2^n).
 - If an APN has existing matches, those are narrowed by checking new invariants. A full database search is done for first compare.
 - Warning: using delta/gamma rank for GF(2^8) can require ~33 GB per thread. Ranks are not possible for fields > 10.
 
 ### 5.3 compute-input-invariants
 
-```
+```bash
 python main.py compute-input-invariants
   --index <int>
   --max-threads <int>
@@ -145,7 +144,7 @@ python main.py compute-input-invariants
 
 ### 5.4 print
 
-```
+```bash
 python main.py print
   --index <int>
   --summary
@@ -159,20 +158,38 @@ python main.py print
 - Combine --index <N> to see one APN only.
 
 ### 5.5 read-db
-
-```
+```bash
 python main.py read-db
   --field-n <int>
   --range <start> <end>
+  --save-to-file
 ```
 
-- Loads APNs from the Parquet database for GF(2^n).
-- If --range is provided, prints a subset of APNs.
+- Loads APNs from the Parquet database for GF(2^n) and displays them.
+- **Required**:
+  - `-field-n` <int>: The integer field n dimension for GF(2^n).
+- **Options**:
+  - `--range` <start> <end> : Displays a subset of APNs in the requested index range (1-based). The default is that the first 10 APNs are printed to the screen.
+  - `--save-to-file` : Writes the univariate polynomial strings of all loaded APNs to a file `{field_n}bit_db_unipoly.txt`. The first line contains the field n dimension, and each subsequent line has the univariate polynomial string of one APN:
+    1. If --range is also supplied, only that subset is shown on screen and saved to the file.
+    2. If --range is not supplied, the script prints up to 10 APNs on screen but saves all loaded APNs from the database to the file.
+
+**Examples**:
+
+- Print the first 10 APNs for GF(2^8):
+  `python main.py read-db --field-n 8`
+
+- Print APNs #5 through #10 for GF(2^6):
+  `python main.py read-db --field-n 6 --range 5 10`
+
+- Load GF(2^8) APNs and save only #3–#7 to 8bit_db_unipoly.txt:
+  `python main.py read-db --field-n 8 --range 3 7 --save-to-file`
 
 ### 5.6 reset-storage
 
-```
-python main.py reset-storage [--yes]
+```bash
+python main.py reset-storage
+  --yes
 ```
 
 - Deletes input_apns_and_matches.json and equivalence_list.json.
@@ -181,10 +198,10 @@ python main.py reset-storage [--yes]
 
 ```bash
 python main.py save
-  [--matches]
-  [--poly]
-  [--tt]
-  [--file-name <str>]
+  --matches
+  --poly
+  --tt
+  --file-name <str>
 ```
 
 - The 'save' command can export data from **input** APN(s) in `input_apns_and_matches.json`.
@@ -198,10 +215,10 @@ If multiple flags are used, each type uses its own default name (e.g. `matches_o
 
 ### 5.8 store-input
 
-```
+```bash
 python main.py store-input
-  [--index <int>]
-  [--max-threads <int>]
+  --index <int>
+  --max-threads <int>
 ```
 
 - Computes invariants for your input APNs (or only one APN if --index is given).
@@ -210,10 +227,10 @@ python main.py store-input
 
 ### 5.9 ccz
 
-```
+```bash
 python main.py ccz
-  [--index <int>]
-  [--max-threads <int>]
+  --index <int>
+  --max-threads <int>
 ```
 
 - Checks CCZ equivalence for input APNs and matches (or only one input APN if --index is given).
@@ -222,10 +239,10 @@ python main.py ccz
 
 ### 5.10 uni3to1
 
-```
+```bash
 python main.py uni3to1
-  [--index <int>]
-  [--max-threads <int>]
+  --index <int>
+  --max-threads <int>
 ```
 
 - Ensure k_to_1 is computed so the code recognizes them as "3-to-1".

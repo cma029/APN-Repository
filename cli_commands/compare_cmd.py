@@ -52,12 +52,12 @@ def compare_apns_cli(compare_type, max_threads):
     else:
         invariants_to_compare = [compare_type]
 
-    # Not possible to select delta and gamma ranks for field-n dimensions larger than 10.
-    if field_n > 10:
+    # Not possible to select delta and gamma ranks for field-n dimensions larger than 8.
+    if field_n > 8:
         filtered = [invariants for invariants in invariants_to_compare if invariants not in ("delta", "gamma")]
         removed = set(invariants_to_compare) - set(filtered)
         if removed:
-            click.echo(f"Warning: {', '.join(removed)} not supported for n > 10. Skipping those invariants.")
+            click.echo(f"Warning: {', '.join(removed)} not supported for n > 8. Skipping those invariants.")
         invariants_to_compare = filtered
 
     if not invariants_to_compare:
@@ -66,11 +66,11 @@ def compare_apns_cli(compare_type, max_threads):
 
     # Concurrency: compute any missing invariants in the input APNs.
     tasks = [(idx, apn_dict, invariants_to_compare) for idx, apn_dict in enumerate(input_apn_list)]
-    max_procs = max_threads or None
+    max_workers = max_threads or None
 
     updated_map: Dict[int, Dict[str, Any]] = {}
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_procs) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_map = {}
         for task_tuple in tasks:
             future_obj = executor.submit(_compute_invariants_for_input_apn, task_tuple)

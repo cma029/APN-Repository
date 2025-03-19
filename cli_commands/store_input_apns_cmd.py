@@ -181,7 +181,7 @@ def _build_db_row_for_apn(apn_index_and_dict: Tuple[int, Dict[str, Any]]) -> Dic
     row_dict["is_monomial"] = apn_obj.invariants.get("is_monomial", False)
     row_dict["k_to_1"] = apn_obj.invariants.get("k_to_1", "unknown")
 
-    row_dict["citation"] = apn_obj.invariants.get("citation", f"No citation for APN {apn_index}")
+    row_dict["citation"] = apn_obj.invariants.get("citation", f"No citation provided")
     return row_dict
 
 

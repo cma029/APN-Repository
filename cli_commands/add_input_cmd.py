@@ -144,6 +144,10 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
         for idx, apn_object in enumerate(tt_apn_results):
             if apn_object is None:
                 continue
+
+            if citation_all:
+                apn_object.invariants["citation"] = citation_all.strip()
+                
             candidate_key = _build_key_from_apn(apn_object)
             if candidate_key in existing_keys:
                 file_line_number = idx + 2

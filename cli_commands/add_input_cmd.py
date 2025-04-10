@@ -12,6 +12,7 @@ from apn_object import APN
 from representations.truth_table_representation import TruthTableRepresentation
 from cli_commands.cli_utils import format_generic_apn
 from apn_invariants import compute_is_apn
+import re
 
 
 @click.command("add-input")
@@ -194,7 +195,7 @@ def add_input_cli(poly, field_n, irr_poly, tt_file, poly_file, citation, citatio
                 poly_part, bracketed_citation = _extract_citation(line_text)
 
             try:
-                poly_list_literal = _parse_line_to_univ_list_literal(poly_part)
+                poly_list_literal = _parse_line_to_univariate_poly_list_literal(poly_part)
             except ValueError as error:
                 click.echo(f"Error in '{poly_path_str}' line {line_no}: {error}", err=True)
                 continue
@@ -372,65 +373,83 @@ def _extract_citation(line: str):
     else:
         return (line, "")
 
-
-def _parse_line_to_univ_list_literal(line: str) -> str:
+def _parse_line_to_univariate_poly_list_literal(line_text):
     # Convert a string polynomial like 'g^15*x^48 + x^3' into a Python list literal: "[(15,48),(0,3)]".
-    terms = [ter.strip() for ter in line.split('+')]
+    letter_symbol_holder = {"symbol": None} 
+
+    terms = [term.strip() for term in line_text.split('+')]
     tuple_list = []
-    for term in terms:
-        coeff_exp, mon_exp = _parse_single_term(term)
+
+    for single_term in terms:
+        coeff_exp, mon_exp = _parse_single_poly_term(single_term, letter_symbol_holder)
         tuple_list.append((coeff_exp, mon_exp))
 
+    # Build the final Python-list-literal string.
     return "[" + ",".join(f"({coeff},{mon})" for (coeff, mon) in tuple_list) + "]"
 
 
-def _parse_single_term(term: str):
-    term = term.strip().lower()
-    if term == '1':
+def _parse_single_poly_term(term_str, letter_symbol_holder):
+    term_str = term_str.strip()
+    if term_str == '1':
+        # coefficient_exp=0, monomial_exp=0 = 1.
         return (0, 0)
-
-    if '*' in term:
-        parts = [part.strip() for part in term.split('*')]
+    
+    if '*' in term_str:
+        parts = [part.strip() for part in term_str.split('*')]
         if len(parts) != 2:
-            raise ValueError(f"Unrecognized polynomial term '{term}'. Expected 2 parts separated by '*'.")
-        left_segment, right_segment = parts
-        coeff_exp = _parse_coefficient(left_segment)
-        mon_exp = _parse_monomial(right_segment)
+            raise ValueError(f"Unrecognized polynomial term '{term_str}'.")
+        coeff_segment, mon_segment = parts
+        coeff_exp = _parse_coefficient(coeff_segment, letter_symbol_holder)
+        mon_exp = _parse_monomial(mon_segment)
         return (coeff_exp, mon_exp)
     else:
         # Just a single coefficient, or just a single monomial.
-        if term.startswith('g'):
-            coeff_exp = _parse_coefficient(term)
-            return (coeff_exp, 0)
-        else:
-            mon_exp = _parse_monomial(term)
+        if term_str.startswith('x'):
+            mon_exp = _parse_monomial(term_str)
             return (0, mon_exp)
+        else:
+            coeff_exp = _parse_coefficient(term_str, letter_symbol_holder)
+            return (coeff_exp, 0)
 
 
-def _parse_coefficient(segment: str) -> int:
+def _parse_coefficient(coeff_segment, letter_symbol_holder):
     # Coefficient format: 'g' = 1, 'g^77' = 77.
-    segment = segment.strip()
-    if segment == 'g':
+    coeff_segment = coeff_segment.strip().lower()
+
+    match = re.match(r'^([a-z])(\^\d+)?$', coeff_segment)
+    if not match:
+        raise ValueError(f"Unrecognized coefficient '{coeff_segment}'. Expected 'g' or 'g^<int>'.")
+
+    letter_part = match.group(1)
+    exponent_part = match.group(2)
+
+    if letter_symbol_holder["symbol"] is None:
+        letter_symbol_holder["symbol"] = letter_part
+    else:
+        if letter_symbol_holder["symbol"] != letter_part:
+            raise ValueError(
+                f"Coefficient '{letter_symbol_holder['symbol']}' and '{letter_part}' in the same polynomial.")
+
+    if exponent_part is None:
         return 1
-    if segment.startswith('g^'):
-        exponent_str = segment[2:].strip()
-        if not exponent_str.isdigit():
-            raise ValueError(f"Unrecognized coefficient '{segment}'. Expected 'g^<int>'.")
-        return int(exponent_str)
-    raise ValueError(f"Unrecognized coefficient '{segment}'. Expected 'g' or 'g^<int>'.")
+
+    exponent_str = exponent_part[1:]
+    if not exponent_str.isdigit():
+        raise ValueError(f"Unrecognized exponent in '{coeff_segment}'. Must be an integer.")
+    return int(exponent_str)
 
 
-def _parse_monomial(segment: str) -> int:
+def _parse_monomial(mon_segment):
     # Monomial format: 'x' = 1, 'x^77' = 77.
-    segment = segment.strip()
-    if segment == 'x':
+    mon_segment = mon_segment.strip().lower()
+    if mon_segment == 'x':
         return 1
-    if segment.startswith('x^'):
-        exponent_str = segment[2:].strip()
+    if mon_segment.startswith('x^'):
+        exponent_str = mon_segment[2:].strip()
         if not exponent_str.isdigit():
-            raise ValueError(f"Unrecognized monomial '{segment}'. Expected 'x^<int>'.")
+            raise ValueError(f"Unrecognized monomial '{mon_segment}'. Expected 'x^<int>'.")
         return int(exponent_str)
-    raise ValueError(f"Unrecognized monomial '{segment}'. Expected 'x' or 'x^<int>'.")
+    raise ValueError(f"Unrecognized monomial '{mon_segment}'. Expected 'x' or 'x^<int>'.")
 
 
 def _build_apn_from_tt_worker(task):

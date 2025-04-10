@@ -115,9 +115,11 @@ python main.py add-input
 ```
 
 - Reads APNs from inline polynomials (--poly), polynomial files (--poly-file), or truth tables (--tt-file).
+- The polynomial files (--poly-file) option accepts coefficients 'a'-'z' (consistently) and the monomial must be 'x'.
 - The first line of the files (--poly-file, --tt-file) needs to be a single integer representing the field n dimension.
 - Tests new APNs in concurrency to see if differential uniformity=2. Non-APNs are skipped.
-- Recommended: --poly-file for speed, since the database uses univariate polynomial representation.
+- Attach citations to each APN with --citation (inline, in order) or --citation-all (same citation for all APNs in a file).
+- Recommended: --poly-file for speed, since the database uses the univariate polynomial representation.
 
 ### 5.2 compare
 

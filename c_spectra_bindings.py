@@ -1,7 +1,3 @@
-# c_spectra_bindings.py
-# Description: This file provides Python bindings to the C library
-# that computes the ODDS, ODWS, ect.
-
 import ctypes
 import os
 import sys

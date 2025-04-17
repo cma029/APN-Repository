@@ -10,9 +10,9 @@ from apn_storage_pandas import load_apn_dataframe_for_field
 @click.command("export-html")
 @click.option("--field-n", required=True, type=int,
               help="The field n dimension for GF(2^n).")
-@click.option("--output-file", default=None, type=str,
+@click.option("--file-name", default=None, type=str,
               help="Custom output HTML file name. Defaults to 'apn_n.html'.")
-def export_html_cli(field_n, output_file):
+def export_html_cli(field_n, file_name):
     """
     Exports the APN database (for GF(2^n)) to a single HTML file with 500 rows per page.
     If dimension <= 9, Δ-rank and Γ-rank columns are included.
@@ -30,8 +30,8 @@ def export_html_cli(field_n, output_file):
         if default_irreducible_poly_int else "None")
 
     # Use the default output filename (if not provided).
-    if not output_file:
-        output_file = f"apn_{field_n}.html"
+    if not file_name:
+        file_name = f"apn_{field_n}.html"
 
     # Build a list of row dictionaries from the DataFrame.
     apn_entries = []
@@ -97,11 +97,11 @@ def export_html_cli(field_n, output_file):
     )
 
     # Write to file.
-    with open(output_file, "w", encoding="utf-8") as file_out:
+    with open(file_name, "w", encoding="utf-8") as file_out:
         file_out.write(html_document_skeleton)
 
     click.echo(
-        f"Exported {len(apn_entries)} APN(s) for dimension={field_n} to '{output_file}'."
+        f"Exported {len(apn_entries)} APN(s) for dimension={field_n} to '{file_name}'."
     )
 
 

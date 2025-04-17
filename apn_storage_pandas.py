@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple
 from apn_object import APN
 from apn_invariants import compute_all_invariants
 
@@ -11,12 +11,8 @@ def get_parquet_filename(field_dimension: int) -> str:
     return f"apn_data_{field_dimension}.parquet"
 
 
-def is_duplicate_candidate(
-    dataframe: pd.DataFrame,
-    field_dimension: int,
-    irreducible_poly: str,
-    polynomial_terms: List[Tuple[int,int]]
-) -> bool:
+def is_duplicate_candidate(dataframe: pd.DataFrame, field_dimension: int, 
+    irreducible_poly: str, polynomial_terms: List[Tuple[int,int]]) -> bool:
     # Check if (field_n, irr_poly, sorted poly) is already in the dataframe.
     sorted_candidate = sorted(polynomial_terms, key=lambda term: (term[0], term[1]))
     matching_rows = dataframe[

@@ -15,6 +15,7 @@
 #define CHECK_LIN_EQ_2X_UNIFORM_3TO1_H
 
 #ifdef __cplusplus
+// Ensure C linkage for C++ compilers.
 extern "C" {
 #endif
 

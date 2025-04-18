@@ -18,7 +18,7 @@ from apn_object import APN
 
 @click.command("compare")
 @click.option("--type", "compare_type", type=click.Choice(["odds", "odws", "delta", "gamma", "all"]),
-              default="all", help="Which invariants to compare. 'all' means delta, gamma, odds, odws.")
+              default="all", help="Which invariants to compare. 'all' means odds, odws, delta, gamma.")
 @click.option("--max-threads", default=None, type=int,
               help="Limit the number of parallel processes used. Default uses all available cores.")
 def compare_apns_cli(compare_type, max_threads):

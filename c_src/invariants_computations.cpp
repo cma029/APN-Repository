@@ -27,6 +27,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <limits>
+#include <cstddef>
 
 // -----------------------------------------------------------------------------
 // Struct to store the function LUT + irreducible polynomial.
@@ -123,29 +124,27 @@ destroy_function(function_t fh)
 static unsigned int differential_uniformity(const Function& F)
 {
     if (F.n == 0) return 0;
-    unsigned int sz = 1U << F.n;
+
+    const size_t sz = size_t{1} << F.n; // 2^n (64-bit size_t).
     const auto& LUT = F.LUT;
 
-    std::vector<unsigned int> ddt(sz * sz, 0);
-    for (unsigned int x = 0; x < sz; x++) {
-        for (unsigned int a = 0; a < sz; a++) {
-            unsigned int y = x ^ a;
-            unsigned int out_diff = LUT[x] ^ LUT[y];
-            ddt[a * sz + out_diff]++;
-        }
-    }
-
-    // Find max count among a != 0.
+    std::vector<unsigned int> counts(sz, 0);
     unsigned int max_count = 0;
-    for (unsigned int a = 1; a < sz; a++) {
-        for (unsigned int b = 0; b < sz; b++) {
-            if (ddt[a * sz + b] > max_count) {
-                max_count = ddt[a * sz + b];
-            }
+
+    for (size_t a = 1; a < sz; ++a) {
+        std::fill(counts.begin(), counts.end(), 0);
+
+        for (size_t x = 0; x < sz; ++x) {
+            size_t y = x ^ a;
+            unsigned int od = LUT[x] ^ LUT[y];
+            unsigned int val = ++counts[od];
+            if (val > max_count)
+                max_count = val;
         }
     }
     return max_count;
 }
+
 static bool is_apn(const Function& F)
 {
     return (differential_uniformity(F) == 2);
@@ -182,12 +181,12 @@ static int compute_k_to_1(const Function& F)
             return -1;
     }
 
-    unsigned int sz = 1U << F.n;
+    size_t sz = size_t{1} << F.n;
     const auto& LUT = F.LUT;
 
     // Count frequencies.
     std::vector<unsigned int> freq(sz, 0);
-    for (unsigned int x = 0; x < sz; x++) {
+    for (size_t x = 0; x < sz; x++) {
         unsigned int outv = LUT[x];
         if (outv >= sz) {
             // Out of range. Can’t be valid under GF(2^n).
@@ -203,9 +202,9 @@ static int compute_k_to_1(const Function& F)
 
     // Find k among nonzero outputs.
     int k = -1;
-    for (unsigned int v = 1; v < sz; v++) {
+    for (size_t v = 1; v < sz; v++) {
         if (freq[v] > 0) {
-            k = (int)freq[v];
+            k = static_cast<int>(freq[v]);
             break;
         }
     }
@@ -215,8 +214,8 @@ static int compute_k_to_1(const Function& F)
     }
 
     // Check that all nonzero outputs have the same frequency k.
-    for (unsigned int v = 1; v < sz; v++) {
-        if (freq[v] != 0 && (int)freq[v] != k) {
+    for (size_t v = 1; v < sz; v++) {
+        if (freq[v] != 0 && static_cast<int>(freq[v]) != k) {
             return -1; // Mismatch => not k-to-1.
         }
     }
@@ -237,9 +236,9 @@ function_k_to_1(function_t fh)
 // -----------------------------------------------------------------------------
 static void compute_anf_bool_inplace(std::vector<uint8_t>& f)
 {
-    unsigned int sz = f.size();
-    for (unsigned int step = 1; step < sz; step <<= 1) {
-        for (unsigned int j = 0; j < sz; j++) {
+    size_t sz = f.size();
+    for (size_t step = 1; step < sz; step <<= 1) {
+        for (size_t j = 0; j < sz; j++) {
             if ((j & step) != 0) {
                 f[j] ^= f[j ^ step];
             }
@@ -250,14 +249,14 @@ static void compute_anf_bool_inplace(std::vector<uint8_t>& f)
 static unsigned int compute_algebraic_degree_mv(const Function& F)
 {
     if (F.n == 0) return 0;
-    unsigned int sz = 1U << F.n;
+    size_t sz = size_t{1} << F.n;
     const auto& LUT = F.LUT;
 
     // Coordinate-by-coordinate.
     std::vector< std::vector<uint8_t> > anf(F.n);
     for (unsigned int c = 0; c < F.n; c++) {
         anf[c].resize(sz);
-        for (unsigned int x = 0; x < sz; x++) {
+        for (size_t x = 0; x < sz; x++) {
             uint32_t outv = LUT[x];
             uint8_t bit_c = (uint8_t)((outv >> c) & 1);
             anf[c][x] = bit_c;
@@ -268,10 +267,10 @@ static unsigned int compute_algebraic_degree_mv(const Function& F)
     // Find max degree across coordinates.
     unsigned int max_deg = 0;
     for (unsigned int c = 0; c < F.n; c++) {
-        for (int i = (int)sz - 1; i >= 0; i--) {
-            if (anf[c][i] == 1) {
+        for (ssize_t i = static_cast<ssize_t>(sz) - 1; i >= 0; i--) {
+            if (anf[c][static_cast<size_t>(i)] == 1) {
                 // Popcount.
-                unsigned int tmp = (unsigned int)i;
+                unsigned int tmp = static_cast<unsigned int>(i);
                 unsigned int w = 0;
                 while (tmp) {
                     w += (tmp & 1);
@@ -395,7 +394,7 @@ static bool is_monomial_impl(const Function& F)
     if (F.polynomial == 0) return false;
     if (F.n > 16) return false;
 
-    unsigned int sz = 1U << F.n;
+    size_t sz = size_t{1} << F.n;
     const auto& LUT = F.LUT;
     GF2nCtx ctx(F.n, F.polynomial);
 
@@ -404,7 +403,7 @@ static bool is_monomial_impl(const Function& F)
     // Check if constant => if all LUT[x] == b => not a monomial with nonzero 'a'.
     {
         bool all_same = true;
-        for (unsigned int x = 0; x < sz; x++) {
+        for (size_t x = 0; x < sz; x++) {
             if (LUT[x] != b) {
                 all_same = false;
                 break;
@@ -416,26 +415,26 @@ static bool is_monomial_impl(const Function& F)
     }
 
     // For d in [0..(sz-2)], try to find a => check.
-    for (unsigned int d = 0; d < (sz - 1); d++) {
+    for (unsigned int d = 0; d < (ctx.size - 1); d++) {
         bool found_candidate_a = false;
         // Pick x=1..(sz-1), see if x^d != 0, solve for a => verify all x.
-        for (unsigned int x = 1; x < sz; x++) {
-            unsigned int xd = gf_pow(ctx, x, d);
+        for (size_t x = 1; x < sz; x++) {
+            unsigned int xd = gf_pow(ctx, static_cast<unsigned int>(x), d);
             if (xd == 0) continue; // Can't invert.
             unsigned int fx = LUT[x];
             unsigned int diff = fx ^ b; // GF(2^n) => XOR.
             unsigned int a = 0;
             if (diff != 0) {
                 // a = diff * inv(xd) => diff * x^( (sz-1)-d ).
-                unsigned int inv_xd = gf_pow(ctx, x, (sz - 1 - d));
+                unsigned int inv_xd = gf_pow(ctx, static_cast<unsigned int>(x), (ctx.size - 1 - d));
                 a = gf_mul(ctx, diff, inv_xd);
             }
             found_candidate_a = true;
 
             // Check for all x.
             bool ok = true;
-            for (unsigned int xx = 0; xx < sz; xx++) {
-                unsigned int xx_d = gf_pow(ctx, xx, d);
+            for (size_t xx = 0; xx < sz; xx++) {
+                unsigned int xx_d = gf_pow(ctx, static_cast<unsigned int>(xx), d);
                 unsigned int val = b;
                 if (a != 0 && xx_d != 0) {
                     unsigned int mul_ = gf_mul(ctx, a, xx_d);

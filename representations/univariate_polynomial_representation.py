@@ -4,7 +4,7 @@ from computations.poly_parse_utils import parse_irreducible_poly_str, bitmask_to
 
 class UnivariatePolynomialRepresentation(Representation):
     """
-    APN function represented as a univariate polynomial over GF(2^n).
+    A vectorial Boolean function represented as a univariate polynomial over GF(2^n).
     The univariate polynomial is stored as a list of tuples: (coefficient_exponent, monomial_exponent).
     Example: [(1,9),(11,6),(0,3)] means a*x^9 + a^11*x^6 + x^3.
     """

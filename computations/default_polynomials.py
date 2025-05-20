@@ -8,10 +8,10 @@ DEFAULT_IRREDUCIBLE_POLYNOMIAL = {
     3:  0xB,         # x^3 + x + 1
     4:  0x13,        # x^4 + x + 1
     5:  0x25,        # x^5 + x^2 + 1
-    6:  0x5B,        # x^6 + x^4 + x^3 + x + 1      (tested and verified)
-    7:  0x83,        # x^7 + x + 1                  (tested and verified)
-    8:  0x11D,       # x^8 + x^4 + x^3 + x^2 + 1    (tested and verified)
-    9:  0x211,       # x^9 + x^4 + 1                (x^3 + x + 1 is also popular)
+    6:  0x5B,        # x^6 + x^4 + x^3 + x + 1
+    7:  0x83,        # x^7 + x + 1
+    8:  0x11D,       # x^8 + x^4 + x^3 + x^2 + 1
+    9:  0x211,       # x^9 + x^4 + 1
     10: 0x46F,       # x^10 + x^6 + x^5 + x^3 + x^2 + x + 1
     11: 0x805,       # x^11 + x^2 + 1
     12: 0x10EB,      # x^12 + x^7 + x^6 + x^5 + x^3 + x + 1

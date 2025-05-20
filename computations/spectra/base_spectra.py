@@ -1,18 +1,17 @@
-# base_spectra.py
-# Description: Abstract base for spectra computations (Differential, Walsh, etc.)
-
+from __future__ import annotations
 from abc import ABC, abstractmethod
+from vbf_object import VBF
 
 class SpectraComputation(ABC):
     """
-    Abstract base class for spectra computations on an APN.
-    For example, Ortho-Derivative Differential Spectrum, Ortho-Derivative Walsh Spectrum, etc.
+    Abstract base class for spectra computations on a vectorial Boolean function,
+    e.g. Ortho-Derivative Differential Spectrum, or Ortho-Derivative extended Walsh Spectrum.
     """
 
     @abstractmethod
-    def compute_spectrum(self, apn):
+    def compute_spectrum(self, vbf: VBF) -> dict | str:
         """
-        Implement the logic for computing the specific spectrum on the given APN,
-        and return a dict or some structure of results.
+        Implement the logic for computing the specific spectrum on the given vectorial 
+        Boolean function. Should return either a dict of {int: int} or 'non-quadratic' string.
         """
         pass

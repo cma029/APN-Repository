@@ -1,34 +1,38 @@
-import os
 import click
-
-from storage.json_storage_utils import (
-    INPUT_APNS_AND_MATCHES_FILE,
-    EQUIVALENCE_LIST_FILE
-)
+from pathlib import Path
 
 @click.command("reset-storage")
 @click.option("--yes", "-y", is_flag=True)
 def reset_storage_cli(yes):
-    # Removes all stored files: input_apns_and_matches.json and equivalence_list.json.
+    """
+    Removes all stored files for VBFs and equivalences:
+      - storage/input_vbfs_and_matches.json
+      - storage/equivalence_list.json
+    """
     if not yes:
         click.confirm(
-            "Are you sure you want to erase all stored APNs and equivalences? "
+            "Are you sure you want to erase all stored VBFs and equivalences? "
             "This action cannot be undone.",
             abort=True
         )
 
-    files_to_delete = [INPUT_APNS_AND_MATCHES_FILE, EQUIVALENCE_LIST_FILE]
+    storage_dir = Path("storage")
+    input_vbfs_and_matches_file = storage_dir / "input_vbfs_and_matches.json"
+    equivalence_list_file = storage_dir / "equivalence_list.json"
 
-    deleted_files = []
-    for file in files_to_delete:
-        if os.path.isfile(file):
+    files_to_delete = [input_vbfs_and_matches_file, equivalence_list_file]
+
+    deleted_paths = []
+    for file_path in files_to_delete:
+        if file_path.is_file():
             try:
-                os.remove(file)
-                deleted_files.append(file)
-            except Exception as e:
-                click.echo(f"Error deleting {file}: {e}", err=True)
+                file_path.unlink()  # Remove the file.
+                deleted_paths.append(file_path)
+            except Exception as exc:
+                click.echo(f"Error deleting {file_path}: {exc}", err=True)
 
-    if deleted_files:
-        click.echo(f"Deleted files: {', '.join(deleted_files)}")
+    if deleted_paths:
+        path_strings = [str(path) for path in deleted_paths]
+        click.echo(f"Deleted files: {', '.join(path_strings)}")
     else:
         click.echo("No storage files found to delete.")

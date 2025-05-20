@@ -4,40 +4,40 @@ from typing import List
 from computations.default_polynomials import DEFAULT_IRREDUCIBLE_POLYNOMIAL
 from computations.poly_parse_utils import bitmask_to_poly_str
 from cli_commands.cli_utils import polynomial_to_str
-from apn_storage_pandas import load_apn_dataframe_for_field
+from storage_pandas import load_dataframe_for_dimension
 
 
 @click.command("export-html")
-@click.option("--field-n", required=True, type=int,
-              help="The field n dimension for GF(2^n).")
+@click.option("--dim", "dim_n", required=True, type=int,
+              help="The dimension n for GF(2^n).")
 @click.option("--file-name", default=None, type=str,
-              help="Custom output HTML file name. Defaults to 'apn_n.html'.")
-def export_html_cli(field_n, file_name):
+              help="Custom output HTML file name. Defaults to 'vbf_n.html'.")
+def export_html_cli(dim_n, file_name):
     """
     Exports the APN database (for GF(2^n)) to a single HTML file with 500 rows per page.
     If dimension <= 9, Δ-rank and Γ-rank columns are included.
     """
-    apn_dataframe = load_apn_dataframe_for_field(field_n)
+    apn_dataframe = load_dataframe_for_dimension(dim_n)
     if apn_dataframe.empty:
-        click.echo(f"No APNs found for field_dimension={field_n}.")
+        click.echo(f"No APNs found for field_dimension={dim_n}.")
         return
 
     # Δ-rank and Γ-rank columns only apply for dimensions <= 9.
-    rank_columns_applicable = (field_n <= 9)
+    rank_columns_applicable = (dim_n <= 9)
 
-    default_irreducible_poly_int = DEFAULT_IRREDUCIBLE_POLYNOMIAL.get(field_n, 0)
+    default_irreducible_poly_int = DEFAULT_IRREDUCIBLE_POLYNOMIAL.get(dim_n, 0)
     default_irreducible_polynomial_str = (bitmask_to_poly_str(default_irreducible_poly_int)
         if default_irreducible_poly_int else "None")
 
     # Use the default output filename (if not provided).
     if not file_name:
-        file_name = f"apn_{field_n}.html"
+        file_name = f"vbf_{dim_n}.html"
 
     # Build a list of row dictionaries from the DataFrame.
     apn_entries = []
     for index_value, data_row in apn_dataframe.iterrows():
         local_identifier = index_value + 1
-        dimension_value = int(data_row.get("field_n", field_n))
+        dimension_value = int(data_row.get("field_n", dim_n))
 
         # Convert stored polynomial JSON into a univariate polynomial string.
         stored_poly_json = data_row.get("poly", "")
@@ -91,7 +91,7 @@ def export_html_cli(field_n, file_name):
     # Generate HTML content.
     html_document_skeleton = _build_html_document(
         apn_entries,
-        field_n,
+        dim_n,
         default_irreducible_polynomial_str,
         rank_columns_applicable
     )
@@ -101,7 +101,7 @@ def export_html_cli(field_n, file_name):
         file_out.write(html_document_skeleton)
 
     click.echo(
-        f"Exported {len(apn_entries)} APN(s) for dimension={field_n} to '{file_name}'."
+        f"Exported {len(apn_entries)} APN(s) for dimension={dim_n} to '{file_name}'."
     )
 
 

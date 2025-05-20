@@ -5,7 +5,7 @@ from computations.poly_parse_utils import parse_irreducible_poly_str, bitmask_to
 
 
 class TruthTableRepresentation(Representation):
-    # Represents the APN function as a truth table.
+    # Represents the vectorial Boolean function as a truth table.
 
     def __init__(self, truth_table):
         self.truth_table = truth_table

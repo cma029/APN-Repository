@@ -1,63 +1,64 @@
 import click
-from apn_storage_pandas import load_apn_objects_for_field_pandas
-from cli_commands.cli_utils import format_generic_apn, polynomial_to_str
+from storage_pandas import load_objects_for_dimension_pandas
+from cli_commands.cli_utils import build_vbf_from_dict, format_generic_vbf, polynomial_to_str
 
 @click.command("read-db")
-@click.option("--field-n", required=True, type=int,
-              help="The field n dimension for GF(2^n).")
-@click.option("--range", "apn_range", nargs=2, type=int, default=None,
-              help="Optional range <start> <end> of APN indexes to print.")
-@click.option("--save-to-file", is_flag=True,
-              help="Saves the selected univariate polynomials to {field_n}bit_db_unipoly.txt.")
-def read_db_apns(field_n, apn_range, save_to_file):
-    # Loads, prints or saves (file name {field_n}bit_db_unipoly.txt) APNs from the database.
-    click.echo(f"Loading APNs for field_n={field_n}...")
-    apn_list = load_apn_objects_for_field_pandas(field_n)
-    if not apn_list:
-        click.echo(f"No APNs found for field_n={field_n}.")
+@click.option("--dim", "dimension_n", required=True, type=int,
+              help="The dimension n for GF(2^n).")
+@click.option("--range", "vbf_range", nargs=2, type=int, default=None,
+              help="Optional range <start> <end> of VBF indexes to print.")
+@click.option("--save-to-file", "save_to_file", is_flag=True,
+              help="Saves the selected univariate polynomials to {dim_n}bit_db_unipoly.txt.")
+def read_db(dimension_n, vbf_range, save_to_file):
+    # Loads, prints or saves (file name {dim_n}bit_db_unipoly.txt) VBFs from the database.
+    click.echo(f"Loading VBFs for dimension n = {dimension_n}...")
+
+    vbf_list = load_objects_for_dimension_pandas(dimension_n)
+    if not vbf_list:
+        click.echo(f"No VBFs found for dimension n = {dimension_n}.")
         return
 
-    click.echo(f"Total APNs loaded for field_n={field_n}: {len(apn_list)}\n")
+    click.echo(f"Total VBFs loaded for dimension n = {dimension_n}: {len(vbf_list)}\n")
 
     # Option: --range <start> <end> for a custom range.
-    if apn_range is not None:
-        start_idx, end_idx = apn_range
-        subset = apn_list[start_idx - 1 : end_idx]
+    if vbf_range is not None:
+        start_idx, end_idx = vbf_range
+        subset = vbf_list[start_idx - 1 : end_idx]
         if not subset:
-            click.echo(f"No APNs in the requested range {start_idx}-{end_idx}.")
+            click.echo(f"No VBFs in the requested range {start_idx}-{end_idx}.")
             return
         start_offset = start_idx
     else:
-        # By default: prints the first 10.
-        subset = apn_list[:10]
+        # By default: prints the first 5.
+        subset = vbf_list[:5]
         start_offset = 1
 
-    click.echo(f"APN GF(2^{field_n}) Details:")
+    click.echo(f"VBF GF(2^{dimension_n}) Details:")
     click.echo("-" * 100)
-    for idx, apn in enumerate(subset, start=start_offset):
-        click.echo(format_generic_apn(apn, f"APN {idx}"))
+    for idx, vbf_object in enumerate(subset, start=start_offset):
+        click.echo(format_generic_vbf(vbf_object, f"VBF {idx}"))
         click.echo("-" * 100)
 
     if save_to_file:
-        if apn_range is not None:
-            apns_to_export = subset
+        if vbf_range is not None:
+            vbfs_to_export = subset
         else:
             # If no range, then save the entire list.
-            apns_to_export = apn_list
+            vbfs_to_export = vbf_list
 
-        out_filename = f"{field_n}bit_db_unipoly.txt"
+        out_filename = f"{dimension_n}bit_db_unipoly.txt"
         click.echo(f"\nSaving univariate polynomials to '{out_filename}'...")
 
-        with open(out_filename, "w", encoding="utf-8") as f:
+        with open(out_filename, "w", encoding="utf-8") as file:
             # First line is the field n dimension.
-            f.write(f"{field_n}\n")
+            file.write(f"{dimension_n}\n")
 
-            for apn_object in apns_to_export:
-                if hasattr(apn_object.representation, "univariate_polynomial"):
-                    poly_str = polynomial_to_str(apn_object.representation.univariate_polynomial)
-                    f.write(poly_str + "\n")
+            for vbf_object in vbfs_to_export:
+                if hasattr(vbf_object.representation, "univariate_polynomial"):
+                    poly_str = polynomial_to_str(vbf_object.representation.univariate_polynomial)
+                    file.write(poly_str + "\n")
                 else:
-                    # In case an APN has no univariate polynomial we fallback.
-                    f.write("0\n")
+                    # In case a VBF has no univariate polynomial we fallback.
+                    file.write("0\n")
 
-        click.echo(f"Saved {len(apns_to_export)} polynomial(s) to '{out_filename}'.")
+        click.echo(f"Saved {len(vbfs_to_export)} polynomial(s) to '{out_filename}'.")

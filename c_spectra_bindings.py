@@ -55,7 +55,7 @@ def create_vbf_tt_from_list(tt_values, dimension):
 
     return vbf, c_array
 
-def vbf_tt_differential_spectrum_python(tt_values, dimension):
+def vbf_tt_differential_spectrum(tt_values, dimension):
     vbf, c_array = create_vbf_tt_from_list(tt_values, dimension)
 
     spectrum_size = vbf.vbf_tt_number_of_entries + 1
@@ -71,7 +71,7 @@ def vbf_tt_differential_spectrum_python(tt_values, dimension):
 
     return spectrum
 
-def vbf_tt_extended_walsh_spectrum_python(tt_values, dimension):
+def vbf_tt_extended_walsh_spectrum(tt_values, dimension):
     vbf, c_array = create_vbf_tt_from_list(tt_values, dimension)
 
     spectrum_size = vbf.vbf_tt_number_of_entries + 1

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 class Representation(ABC):
-    # Abstract base class for representing APN functions.
+    # Abstract base class for representing vectorial Boolean functions (VBFs).
 
     @abstractmethod
     def to_univariate_polynomial(self, field_n, irr_poly):

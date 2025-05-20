@@ -1,10 +1,12 @@
 import re
 from computations.default_polynomials import DEFAULT_IRREDUCIBLE_POLYNOMIAL
 
+_irred_regex = re.compile(r"x\^(\d+)$")
+
 def parse_irreducible_poly_str(poly_str: str) -> int:
     """
-    Parse a polynomial string like 'x^6 + x^4 + x^3 + x + 1' into an integer bitmask.
-    Return 0 if the string is empty or parse fails.
+    Parse a polynomial string like 'x^6 + x^4 + x^3 + x + 1' into an integer bitmask 
+    (e.g. 0x5B). Return 0 if the string is empty or parse fails.
     """
     if not poly_str:
         return 0
@@ -24,7 +26,7 @@ def parse_irreducible_poly_str(poly_str: str) -> int:
             valid = True
         else:
             # Maybe x^n.
-            match = re.match(r"x\^(\d+)$", token)
+            match = _irred_regex.match(token)
             if match:
                 exp_val = int(match.group(1))
                 if exp_val < 0 or exp_val > 2000:

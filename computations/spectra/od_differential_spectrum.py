@@ -1,19 +1,40 @@
-# od_differential_spectrum.py
-# Description: Implementation of the Ortho-Derivative Differential Spectrum (ODDS)
-
+from __future__ import annotations
 from computations.spectra.base_spectra import SpectraComputation
-from c_spectra_bindings import vbf_tt_differential_spectrum_python
+from c_spectra_bindings import vbf_tt_differential_spectrum
+from vbf_object import VBF
+from registry import REG
 
-class ODDifferentialSpectrumComputation(SpectraComputation):
+def _ensure_quadratic_flag(vbf_object: VBF) -> None:
+    if "is_quadratic" in vbf_object.invariants:
+        return
+    try:
+        is_quad_fn = REG.get("invariant", "is_quadratic")
+        is_quad_fn(vbf_object)
+    except Exception:
+        pass
+
+class ODDifferentialSpectrum(SpectraComputation):
     """
-    Ortho-Derivative Differential Spectrum computation class.
+    Internal class for computing the Ortho-Derivative Differential Spectrum (ODDS).
     """
+    def compute_spectrum(self, vbf_object: VBF) -> dict | str:
 
-    def compute_spectrum(self, apn):
-        # We obtain the APN's truth table as a Python list
-        tt_values = apn._get_truth_table_list()
-        dimension = apn.field_n
+        _ensure_quadratic_flag(vbf_object)
+        if not vbf_object.invariants.get("is_quadratic", False):
+            return "non-quadratic"
 
-        # Then we call the C library function from spectra_computations.c,
-        # which computes the OD differential spectrum.
-        return vbf_tt_differential_spectrum_python(tt_values, dimension)
+        tt_values = vbf_object._get_truth_table_list()
+        
+        # Call into the C-binding for the heavy-lifting.
+        result = vbf_tt_differential_spectrum(tt_values, vbf_object.field_n)
+
+        return {int(key): int(val) for key, val in result.items()}
+
+
+@REG.register("invariant", "odds")
+def odds_aggregator(vbf_object: VBF) -> None:
+    # Aggregator function for 'odds'. Store into vbf_object.invariants["odds"].
+
+    odds_spectrum = ODDifferentialSpectrum()
+    result = odds_spectrum.compute_spectrum(vbf_object)
+    vbf_object.invariants["odds"] = result

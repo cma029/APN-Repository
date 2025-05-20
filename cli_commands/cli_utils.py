@@ -1,5 +1,8 @@
-from apn_invariants import reorder_invariants
-from apn_object import APN
+from invariants import reorder_invariants
+from typing import Dict, Any
+from vbf_object import VBF
+from registry import REG
+
 
 def polynomial_to_str(univ_poly):
     # Convert a list of ([coefficient_exp, monomial_exp]) into a univariate polynomial string.
@@ -47,19 +50,19 @@ def _invariants_str_with_linebreak(invariants: dict) -> str:
         return "{}"
 
     items = []
-    for k, v in invariants.items():
-        items.append(f"'{k}': {v!r}")  # !r to get repr(...) of v
+    for key, value in invariants.items():
+        items.append(f"'{key}': {value!r}")
 
-    # After we find 'gamma_rank', we insert " => \n.
+    # After we find 'gamma_rank', we insert \n.
     result_pieces = []
-    for i, pair_str in enumerate(items):
+    for index, pair_str in enumerate(items):
         if "'gamma_rank': " in pair_str:
             result_pieces.append(pair_str + ",\n  ")
         else:
-            if i < len(items)-1:
+            if index < len(items)-1:
                 result_pieces.append(pair_str + ", ")
             else:
-                # Last item => no trailing comma.
+                # Last item has no trailing comma.
                 result_pieces.append(pair_str)
 
     # Wrap them in a dictionary style.
@@ -67,39 +70,70 @@ def _invariants_str_with_linebreak(invariants: dict) -> str:
     return "{" + joined_str + "}"
 
 
-def format_generic_apn(apn: APN, label: str) -> str:
-    reorder_invariants(apn)
+def format_generic_vbf(vbf: VBF, label: str) -> str:
+    reorder_invariants(vbf)
 
-    # Check if apn.representation has univariate_polynomial.
-    if hasattr(apn.representation, "univariate_polynomial"):
-        poly_str = polynomial_to_str(apn.representation.univariate_polynomial)
+    # Check if vbf.representation has univariate_polynomial.
+    if hasattr(vbf.representation, "univariate_polynomial"):
+        poly_str = polynomial_to_str(vbf.representation.univariate_polynomial)
     else:
-        poly_str = "Truth Table based APN"
+        poly_str = "Truth Table based VBF"
 
     lines = []
     lines.append(f"{label}:")
-    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{apn.irr_poly}'")
-    inv_str = _invariants_str_with_linebreak(apn.invariants)
+    lines.append(f"  Univariate polynomial representation: {poly_str}, irreducible_poly='{vbf.irr_poly}'")
+    inv_str = _invariants_str_with_linebreak(vbf.invariants)
     lines.append(f"  Invariants: {inv_str}")
 
     return "\n".join(lines)
 
 
-def build_apn_from_dict(apn_dict: dict) -> APN:
-    poly_list = apn_dict.get("poly", [])
-    field_n = apn_dict.get("field_n", 0)
-    irr_poly = apn_dict.get("irr_poly", "")
-    cached_tt = apn_dict.get("cached_tt", [])
+def build_vbf_from_dict(vbf_dictionary: Dict[str, Any]) -> VBF:
+    # Build (or reconstruct) a VBF from a dictionary.
+    poly_list = vbf_dictionary.get("poly", [])
+    field_n   = vbf_dictionary.get("field_n", 0)
+    irr_poly  = vbf_dictionary.get("irr_poly", "")
+    cached_tt = vbf_dictionary.get("cached_tt", [])
 
     if poly_list:
-        apn_obj = APN(poly_list, field_n, irr_poly)
+        vbf_object = VBF(poly_list, field_n, irr_poly)
         if cached_tt:
-            apn_obj._cached_tt_list = cached_tt
+            vbf_object._cached_tt_list = cached_tt
     else:
         if cached_tt:
-            apn_obj = APN.from_cached_tt(cached_tt, field_n, irr_poly)
+            vbf_object = VBF.from_cached_tt(cached_tt, field_n, irr_poly)
         else:
-            apn_obj = APN([], field_n, irr_poly)
+            # Fallback empty.
+            vbf_object = VBF([], field_n, irr_poly)
 
-    apn_obj.invariants = apn_dict.get("invariants", {})
-    return apn_obj
+    # Merge existing invariants if present.
+    vbf_object.invariants = vbf_dictionary.get("invariants", {})
+
+    return vbf_object
+
+
+def get_custom_ordered_invariant_keys() -> list[str]:
+    # Returns a list of invariant keys in a custom order.
+    all_keys = REG.keys("invariant")
+    all_key_set = set(all_keys)
+
+    classic_invariants = [
+        "odds",
+        "odws",
+        "delta_rank",
+        "gamma_rank",
+    ]
+
+    final_list = []
+
+    for invariant_key in classic_invariants:
+        if invariant_key in all_key_set:
+            final_list.append(invariant_key)
+
+    leftover = all_key_set - set(final_list)
+    leftover_sorted = sorted(leftover)
+    final_list.extend(leftover_sorted)
+
+    final_list.append("all")
+
+    return final_list

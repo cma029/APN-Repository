@@ -5,13 +5,18 @@ from typing import List, Tuple
 from vbf_object import VBF
 from invariants import compute_all_invariants
 
+def get_parquet_filename(dimension: int, is_apn: bool) -> str:
+    """
+    Returns the filename for storing VBFs of dimension n.
+    If is_apn = True:  returns /database/apn/apn_data_{dimension}.parquet
+    If is_apn = False: returns /database/vbf/vbf_data_{dimension}.parquet
+    """
+    subfolder = "apn" if is_apn else "vbf"
+    file_prefix = "apn_data" if is_apn else "vbf_data"
+    return os.path.join("database", subfolder, f"{file_prefix}_{dimension}.parquet")
 
-def get_parquet_filename(dimension: int) -> str:
-    # Returns the filename for storing APNs of dimension n. E.g., for n=6 -> 'apn_data_6.parquet'.
-    return f"apn_data_{dimension}.parquet"
 
-
-def is_duplicate_candidate(dataframe: pd.DataFrame, dimension_n: int, 
+def is_duplicate_candidate(dataframe: pd.DataFrame, dimension_n: int,
     irreducible_poly: str, polynomial_terms: List[Tuple[int,int]]) -> bool:
     # Check if (field_n, irr_poly, sorted poly) is already in the dataframe.
     sorted_candidate = sorted(polynomial_terms, key=lambda term: (term[0], term[1]))
@@ -41,12 +46,12 @@ def is_duplicate_candidate(dataframe: pd.DataFrame, dimension_n: int,
 # READING AND WRITING FILES
 # --------------------------------------------------------------
 
-def load_dataframe_for_dimension(dimension: int) -> pd.DataFrame:
+def load_dataframe_for_dimension(dimension: int, is_apn: bool) -> pd.DataFrame:
     """
-    Loads all VBFs for field degree n from the Parquet file.
+    Loads all VBFs for field degree n from the Parquet file, checking whether is_apn is True or False.
     If no file exists, returns an empty DataFrame with required columns.
     """
-    filename = get_parquet_filename(dimension)
+    filename = get_parquet_filename(dimension, is_apn)
     if not os.path.isfile(filename):
         columns = [
             "field_n", "poly", "irr_poly",
@@ -87,9 +92,11 @@ def load_dataframe_for_dimension(dimension: int) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
 
 
-def save_dataframe_for_dimension(dimension: int, dataframe: pd.DataFrame) -> None:
-    # Writes dataframe to apn_data_{dimension}.parquet with Snappy compression.
-    filename = get_parquet_filename(dimension)
+def save_dataframe_for_dimension(dimension: int, dataframe: pd.DataFrame, is_apn: bool) -> None:
+    # Writes dataframe to with Snappy compression.
+    filename = get_parquet_filename(dimension, is_apn)
+    # Ensure directories exist.
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     try:
         dataframe.to_parquet(filename, index=False, compression='snappy')
         print(f"Data successfully written to {filename} with Snappy compression.")
@@ -104,8 +111,8 @@ def save_dataframe_for_dimension(dimension: int, dataframe: pd.DataFrame) -> Non
 def store_vbf_pandas(polynomial_terms: List[Tuple[int, int]], dimension: int, irreducible_polynomial: str,
     citation_message: str = "No citation provided.") -> None:
     """
-    Build an VBF object from polynomial terms, compute invariants, and store the object 
-    as a new row in the Parquet database for the specified dimension.
+    Build a VBF object from polynomial terms, compute invariants, and store the object as 
+    a new row in the Parquet database for the specified dimension based on 'is_apn' == True.
     """
     try:
         vbf_object = VBF(polynomial_terms, dimension, irreducible_polynomial)
@@ -113,17 +120,8 @@ def store_vbf_pandas(polynomial_terms: List[Tuple[int, int]], dimension: int, ir
         print(f"Error constructing VBF from polynomial {polynomial_terms} => {parse_err}")
         return
 
-    # Load the existing database.
-    existing_dataframe = load_dataframe_for_dimension(dimension)
-    if is_duplicate_candidate(existing_dataframe, dimension, irreducible_polynomial, polynomial_terms):
-        print(f"VBF {polynomial_terms} is a duplicate and will not be stored.")
-        return
-
+    # Compute all invariants.
     compute_all_invariants(vbf_object)
-
-    if not vbf_object.invariants.get("is_apn", False):
-        print("The function is not APN (differential uniformity != 2).")
-        return
 
     # Convert numeric invariants to the correct type.
     delta_rank_value = vbf_object.invariants.get("delta_rank", None)
@@ -155,6 +153,7 @@ def store_vbf_pandas(polynomial_terms: List[Tuple[int, int]], dimension: int, ir
     kto1_value = vbf_object.invariants.get("k_to_1", "unknown")
     citation_value = vbf_object.invariants.get("citation", citation_message)
 
+    # Build the new row for storing.
     row_dict = {
         "field_n": int(dimension),
         "poly": json.dumps(polynomial_terms),
@@ -172,25 +171,51 @@ def store_vbf_pandas(polynomial_terms: List[Tuple[int, int]], dimension: int, ir
         "citation": str(citation_value)
     }
 
+    # Load dataframe based on is_apn or not.
+    existing_dataframe = load_dataframe_for_dimension(dimension, is_apn=is_apn_value)
+
+    # Check for duplicates.
+    poly_str = row_dict["poly"]
+    poly_data = []
+    if poly_str:
+        try:
+            poly_data = json.loads(poly_str)
+        except:
+            pass
+
+    if is_duplicate_candidate(existing_dataframe, dimension, irreducible_polynomial, poly_data):
+        print(f"VBF {polynomial_terms} is a duplicate and will not be stored.")
+        return
+
     # Append & save.
     new_dataframe = pd.DataFrame([row_dict])
     combined_dataframe = pd.concat([existing_dataframe, new_dataframe], ignore_index=True)
-    save_dataframe_for_dimension(dimension, combined_dataframe)
-    print(f"VBF {polynomial_terms} saved => done.")
+    final_dataframe = combined_dataframe.drop_duplicates()
+    save_dataframe_for_dimension(dimension, final_dataframe, is_apn=is_apn_value)
+
+    if is_apn_value:
+        print(f"APN {polynomial_terms} saved => /database/apn/apn_data_{dimension}.parquet")
+    else:
+        print(f"VBF {polynomial_terms} saved => /database/vbf/vbf_data_{dimension}.parquet")
 
 
 # --------------------------------------------------------------
 # LOADING + RECONSTRUCTING VBF OBJECTS
 # --------------------------------------------------------------
 
-def load_objects_for_dimension_pandas(dimension: int) -> List[VBF]:
+def load_objects_for_dimension_pandas(dimension: int, is_apn: bool = True) -> List[VBF]:
     """
-    Loads all VBF entries for dimension n from the Parquet file, reconstructs VBF objects, 
-    and populates their invariants with ODDS/ODWS, ranks and other invariants.
+    Loads all entries for dimension n from the Parquet file, reconstructs VBF objects, and 
+    populates their invariants.
+
+    If is_apn=True (the default), loads APN entries from /database/apn/apn_data_{dimension}.parquet;
+    if is_apn=False, loads from /database/vbf/vbf_data_{dimension}.parquet.
     """
-    loaded_dataframe = load_dataframe_for_dimension(dimension)
+    loaded_dataframe = load_dataframe_for_dimension(dimension, is_apn=is_apn)
     if loaded_dataframe.empty:
-        print(f"No VBFs found in database for dimension n = {dimension}.")
+        print(
+            f"No VBFs found for dimension n={dimension} in {'apn' if is_apn else 'vbf'} database."
+        )
         return []
 
     vbf_list: List[VBF] = []

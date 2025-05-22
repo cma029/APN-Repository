@@ -1,6 +1,6 @@
 import click
 from storage_pandas import load_objects_for_dimension_pandas
-from cli_commands.cli_utils import build_vbf_from_dict, format_generic_vbf, polynomial_to_str
+from cli_commands.cli_utils import format_generic_vbf, polynomial_to_str
 
 @click.command("read-db")
 @click.option("--dim", "dimension_n", required=True, type=int,

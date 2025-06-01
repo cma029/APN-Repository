@@ -336,6 +336,10 @@ def _parse_line_to_univ_list_literal(line_str: str) -> str:
 
 def _parse_single_term(term_str: str, letter_holder: dict) -> (int, int):
     term_str = term_str.strip()
+
+    if term_str.endswith(','):
+        term_str = term_str[:-1].strip()
+    
     if term_str == '1':
         # coefficient_exp=0, monomial_exp=0 = 1.
         return (0, 0)

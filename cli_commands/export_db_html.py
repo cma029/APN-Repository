@@ -17,7 +17,7 @@ def export_html_cli(dim_n, file_name):
     Exports the APN database (for GF(2^n)) to a single HTML file with 500 rows per page.
     If dimension <= 9, Δ-rank and Γ-rank columns are included.
     """
-    apn_dataframe = load_dataframe_for_dimension(dim_n)
+    apn_dataframe = load_dataframe_for_dimension(dim_n, is_apn=True)
     if apn_dataframe.empty:
         click.echo(f"No APNs found for field_dimension={dim_n}.")
         return

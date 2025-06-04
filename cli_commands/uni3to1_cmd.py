@@ -49,6 +49,10 @@ def uni3to1_equivalence_cli(single_vbf_index, max_threads):
             continue
         candidate_vbf_object = build_vbf_from_dict(single_vbf_dictionary)
 
+        vbf_matches = single_vbf_dictionary.get("matches", [])
+        if not vbf_matches:
+            click.echo(f"No matches for input VBF {actual_index}.")
+
         # Build tasks for each of its matches (for each match, also check if it's 3-to-1).
         for match_index, match_dictionary in enumerate(single_vbf_dictionary.get("matches", [])):
             if match_dictionary.get("invariants", {}).get("k_to_1") != "3-to-1":

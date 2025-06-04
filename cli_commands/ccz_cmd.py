@@ -36,6 +36,10 @@ def ccz_equivalence_cli(single_vbf_index, max_threads):
         actual_index = chosen_indices[offset_index]
         candidate_vbf_object = build_vbf_from_dict(single_vbf_dictionary)
 
+        vbf_matches = single_vbf_dictionary.get("matches", [])
+        if not vbf_matches:
+            click.echo(f"No matches for input VBF {actual_index}.")
+
         # Build tasks for each of its matches.
         for match_index, match_dictionary in enumerate(single_vbf_dictionary.get("matches", [])):
             match_vbf_object = build_vbf_from_dict(match_dictionary)

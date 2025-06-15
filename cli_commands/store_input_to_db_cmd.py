@@ -107,7 +107,7 @@ def store_input_cli(index, max_threads):
         return
     field_n_value = list(field_n_values)[0]
 
-    existing_dataframe = load_dataframe_for_dimension(field_n_value)
+    existing_dataframe = load_dataframe_for_dimension(field_n_value, is_apn=True)
     duplicates_skipped = 0
     accepted_rows = []
 
@@ -135,7 +135,7 @@ def store_input_cli(index, max_threads):
         return
 
     final_dataframe = existing_dataframe.drop_duplicates()
-    save_dataframe_for_dimension(field_n_value, final_dataframe)
+    save_dataframe_for_dimension(field_n_value, final_dataframe, is_apn=True)
     stored_count = len(accepted_rows)
 
     click.echo(

@@ -6,6 +6,11 @@ from cli_commands.cli_utils import polynomial_to_str
 from storage.json_storage_utils import load_equivalence_list, save_equivalence_list
 from registry import REG
 
+# -------------------------------------------------------------------------
+# Only equivalence keys listed here are allowed to prune matches on False.
+# -------------------------------------------------------------------------
+_PRUNE_ON_FALSE: set[str] = {"ccz"}
+
 
 def _equivalence_worker(task_data: Tuple[int, int, Any, Any, str]) -> Tuple[int, int, bool | None]:
     """
@@ -28,18 +33,18 @@ def run_equivalence_on_matches(*,input_vbf_list: List[Dict[str, Any]], concurren
     if not concurrency_tasks:
         return input_vbf_list
 
-    # Wrap each concurrency task with eq_key so the worker can fetch the right class.
-    packaged_tasks = []
-    for (vbf_idx, match_idx, vbfF, vbfG) in concurrency_tasks:
-        packaged_tasks.append((vbf_idx, match_idx, vbfF, vbfG, eq_key))
+    # Wrap tasks with the eq_key so workers know which class to use.
+    packaged_tasks = [
+        (vbf_idx, match_idx, vbfF, vbfG, eq_key) for (vbf_idx, match_idx, vbfF, vbfG) in concurrency_tasks]
 
     # -------------------------------------------------------------------
     # Run concurrency.
     # -------------------------------------------------------------------
     results: List[Tuple[int, int, bool | None]] = []
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {executor.submit(_equivalence_worker, task_item): (task_item[0], task_item[1])
-            for task_item in packaged_tasks
+        future_map = {
+            executor.submit(_equivalence_worker, task): (task[0], task[1])
+            for task in packaged_tasks
         }
         for done_future in concurrent.futures.as_completed(future_map):
             input_vbf_idx, match_vbf_idx = future_map[done_future]
@@ -57,18 +62,19 @@ def run_equivalence_on_matches(*,input_vbf_list: List[Dict[str, Any]], concurren
     remove_entire_vbfs: set[int] = set()
     inequivalent_matches_map: Dict[int, List[int]] = defaultdict(list)
 
-    # For each APN that has a True match we remove the entire APN from the list.
+    # Handle results.
     for single_vbf_index, pair_list in equivalence_map.items():
+        # For any True, we remove the whole VBF.
         any_equivalent = [m_idx for (m_idx, val) in pair_list if val is True]
         if any_equivalent:
-            # Record the first True match in equivalence_list.json.
             _store_equivalence_record(input_vbf_list[single_vbf_index],
                 input_vbf_list[single_vbf_index]["matches"][any_equivalent[0]], eq_key)
             remove_entire_vbfs.add(single_vbf_index)
         else:
-            # If none are True, we only remove those that are definitively False.
-            inequivalent = [m_idx for (m_idx, val) in pair_list if val is False]
-            inequivalent_matches_map[single_vbf_index] = inequivalent
+            # Remove False matches only if this eq_key is allowed to prune.
+            if eq_key in _PRUNE_ON_FALSE:
+                inequivalent = [m_idx for (m_idx, val) in pair_list if val is False]
+                inequivalent_matches_map[single_vbf_index] = inequivalent
 
     # Build a new list of VBFs, excluding those that are removed.
     filtered_vbf_list: List[Dict[str, Any]] = []

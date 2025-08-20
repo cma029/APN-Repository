@@ -1,5 +1,4 @@
 from __future__ import annotations
-from math import log2
 from sage.all import Matrix, GF
 from computations.rank.base_rank import RankComputation
 from registry import REG
